@@ -45,3 +45,30 @@ filesystem (see `../ORCHESTRATION.md`).
   required deliverable.
 - **Next:** unchanged — awaiting Rolando completion, then verify (outputs + report log) and deploy
   Diana + Jordan.
+
+### 2026-07-21 16:20 EDT — Rolando COMPLETE and verified; execution model set to sequential
+- Rolando agent finished (commit `2f64e7c` on feature/rolando-data-ingestion). Independently
+  verified: `validate_dataset_paths.py` Rolando rows OK; manifest 38 rows / correct schema / POSIX
+  paths / splits train22-val8-test6-excluded2; both figures present; report log filled in.
+- **Data is SYNTHETIC** — no kaggle.json anywhere. Rolando generated a labeled synthetic invoice
+  set and (good catch) fixed a Windows-backslash path bug that would have broken Colab/Linux.
+  Consequence for the team: Diana will find no real stamps/signatures, Jordan has no real region
+  ground truth — both must use synthetic labeled fallbacks. All downstream metrics are
+  pipeline-validity checks, not real-world performance.
+- **Decision: run remaining agents SEQUENTIALLY** (not parallel). One shared working tree makes
+  concurrent git unsafe, and worktree isolation would hide the gitignored synthetic data. Verified
+  gitignored manifest/images persist across branch checkouts.
+- **Git consolidation:** committed orchestrator infra + report-log system to `main` (227df3f) and
+  merged into `dev` + all 5 feature branches, so report-log stubs/template are present on every
+  branch and won't disappear on checkout. Confirmed 8 infra files on each branch (9 on rolando).
+- **Next:** deploy Diana (sequential). On completion → verify → merge to dev consideration →
+  deploy Jordan.
+
+### 2026-07-21 16:22 EDT — Diana (stamp/signature) deployed
+- Launched Sonnet 5 agent as Diana on feature/diana-stamp-signature. Brief accounts for synthetic
+  regime: real SignverOD/StaVer unavailable → overlay synthetic stamp + signature marks onto the
+  actual manifest invoice images (document_id-consistent) with recorded ground-truth boxes, train/
+  demonstrate detection, compute per-class precision/recall/IoU via src/iou.py, keep labels exactly
+  "stamp"/"signature", not every invoice gets a mark (tests true negatives). Commit scoped to its
+  own files; fill diana_report_log.md.
+- **Next:** await Diana completion → verify → deploy Jordan.

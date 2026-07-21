@@ -14,11 +14,20 @@ Status values: `pending` · `in-progress` · `blocked` · `needs-verify` · `com
 
 | # | Member | Branch | Status | Deployed (session) | Outputs verified? | Notes |
 |---|---|---|---|---|---|---|
-| 1 | Rolando (data ingestion) | feature/rolando-data-ingestion | in-progress | 2026-07-21 16:00 EDT | not yet | Background Sonnet 5 agent. Must complete + verify before wave 2. May use synthetic data fallback if no kaggle.json. |
-| 2 | Diana (stamp/signature) | feature/diana-stamp-signature | pending (blocked on #1) | — | — | Deploy after Rolando verified. Can run parallel with #3. |
-| 3 | Jordan (region/IoU) | feature/jordan-region-iou | pending (blocked on #1) | — | — | Deploy after Rolando verified. Can run parallel with #2. Likely needs manual annotation subset (see runbook.md). |
+| 1 | Rolando (data ingestion) | feature/rolando-data-ingestion | **complete** | 2026-07-21 16:00 EDT | ✅ yes (16:20) | Committed 2f64e7c. 38-row manifest (36 clean/2 corrupt; train22/val8/test6), POSIX paths, both figures, report log filled. **SYNTHETIC data** (no kaggle.json). Caught+fixed a backslash-path portability bug. |
+| 2 | Diana (stamp/signature) | feature/diana-stamp-signature | in-progress | 2026-07-21 16:22 EDT | not yet | Deployed (sequential). SignverOD/StaVer unavailable (no creds) → synthetic stamp/signature overlay on manifest images. |
+| 3 | Jordan (region/IoU) | feature/jordan-region-iou | pending (blocked on #2 finishing — sequential) | — | — | Deploy after Diana done. Needs region ground-truth (none public) → synthetic labeled set + inference on manifest images. |
 | 4 | Damir (OCR/terms) | feature/damir-ocr-terms | pending (blocked on #3) | — | — | Needs Jordan's region_predictions.csv (+ Diana's stamp/sig preds). |
-| 5 | Hessam (integration/Streamlit) | feature/hessam-integration-streamlit | pending (blocked on #1-4) | — | — | Runs last; integrates all outputs into final JSON + demo. |
+| 5 | Hessam (integration/Streamlit) | feature/hessam-integration-streamlit | pending (blocked on #1-4) | — | — | Runs last; integrates all outputs into final JSON + demo + report/deck assembly. |
+
+**Execution model (important):** agents run **SEQUENTIALLY**, one at a time, in the single shared
+working tree — NOT in parallel. Concurrent agents would corrupt git state (shared index/checkouts),
+and git-worktree isolation would hide the gitignored synthetic data (manifest + images) they depend
+on. Gitignored data persists on disk across branch checkouts, so a sequential agent on any branch
+sees it. Orchestrator home branch = `main`; the infra + report-log stubs were committed to `main`
+and merged into `dev` + all feature branches so checkouts don't remove them. Each agent commits
+ONLY its own files to its feature branch (scoped, no `git add -A`); orchestrator merges each
+feature branch → `dev` at integration time.
 
 ## Report log deliverable (every member — feeds the report & slide deck)
 
