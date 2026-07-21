@@ -72,3 +72,27 @@ filesystem (see `../ORCHESTRATION.md`).
   "stamp"/"signature", not every invoice gets a mark (tests true negatives). Commit scoped to its
   own files; fill diana_report_log.md.
 - **Next:** await Diana completion → verify → deploy Jordan.
+
+### 2026-07-21 17:00 EDT — Diana COMPLETE (synthetic) and verified
+- Diana agent finished (commit `8da2511` on feature/diana-stamp-signature). Independently verified
+  on disk: predictions CSV (43 rows, real YOLOv8n confidences, correct separate stamp/signature
+  labels), metrics JSON (stamp P/R 1.0/1.0 IoU 0.96; signature P/R 0.91/1.0 IoU 0.87), detection
+  figure (1.2MB), GT annotations CSV, real 6.2MB `best.pt` weights in both model dirs + READMEs,
+  report log filled. Good work — high metrics reflect easy synthetic marks, documented as such.
+
+### 2026-07-21 17:15 EDT — HUMAN manual data download detected; HOLD in effect
+- User instructed (previous turn): they will manually download the real data sources and place them
+  in data/raw; WAIT for the human to confirm completion before launching the next agents.
+- Orchestrator disk survey confirms real data is now present: `data/raw/invoices/{batch_1,2,3}`
+  ≈8,190 real invoice JPGs + 3 annotation CSVs (38 synthetic_invoice_* leftovers still at root);
+  `data/raw/signatures/` = SignverOD (~2,765 imgs + train/test CSVs + labelmap + tfrecords);
+  `data/raw/stamps/` = StaVer (1,227 PNG + 400 GT txt).
+- **HOLDING.** Neither Diana's report nor this survey counts as the human's go-signal. No agent will
+  be launched/re-run until the human explicitly confirms.
+- Housekeeping done while idle: verified Diana, updated job_log + status_log on `main`. Left Diana's
+  synthetic work committed on its branch (not merged to dev — will be superseded by a real-data run).
+- **Planned once human confirms:** (1) optionally clean the 38 synthetic_invoice_* leftovers from
+  data/raw/invoices root so they don't pollute the real manifest; (2) re-run Rolando on the real
+  invoice batches → new real manifest; (3) re-run Diana on real SignverOD/StaVer; (4) then Jordan →
+  Damir → Hessam on real data. Confirm approach with human before executing.
+- **Next:** await human "download complete / go" message.

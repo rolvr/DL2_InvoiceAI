@@ -10,12 +10,25 @@ Status values: `pending` · `in-progress` · `blocked` · `needs-verify` · `com
 > notifications. After a session break they are dead — re-deploy a fresh agent for any job not
 > verified `complete` on disk. Do not treat a recorded agentId as reattachable from a new session.
 
+## ⛔ HOLD (2026-07-21 ~17:15 EDT) — awaiting human go-signal on real data
+
+Real datasets have been manually placed on disk (verified by orchestrator survey):
+`data/raw/invoices/{batch_1,batch_2,batch_3}` ≈ 8,190 real invoice JPGs + 3 annotation CSVs
+(38 `synthetic_invoice_*` leftovers still at folder root); `data/raw/signatures/` = SignverOD
+(~2,765 imgs + train/test CSVs + labelmap + tfrecords); `data/raw/stamps/` = StaVer (1,227 PNG
++ 400 GT txt). **Per explicit user instruction, do NOT launch/re-run any agent until the HUMAN
+confirms the download is complete.** A background agent's report and the orchestrator's own disk
+survey are NOT that confirmation. When the human gives the go: re-run Rolando on the real invoice
+batches (regenerates the manifest — everything joins on it), then re-run Diana on real SignverOD/
+StaVer, then Jordan → Damir → Hessam on the real foundation. Rolando/Diana current outputs are
+SYNTHETIC and will be superseded.
+
 ## Current wave
 
 | # | Member | Branch | Status | Deployed (session) | Outputs verified? | Notes |
 |---|---|---|---|---|---|---|
 | 1 | Rolando (data ingestion) | feature/rolando-data-ingestion | **complete** | 2026-07-21 16:00 EDT | ✅ yes (16:20) | Committed 2f64e7c. 38-row manifest (36 clean/2 corrupt; train22/val8/test6), POSIX paths, both figures, report log filled. **SYNTHETIC data** (no kaggle.json). Caught+fixed a backslash-path portability bug. |
-| 2 | Diana (stamp/signature) | feature/diana-stamp-signature | in-progress | 2026-07-21 16:22 EDT | not yet | Deployed (sequential). SignverOD/StaVer unavailable (no creds) → synthetic stamp/signature overlay on manifest images. |
+| 2 | Diana (stamp/signature) | feature/diana-stamp-signature | **complete (SYNTHETIC)** | 2026-07-21 16:22 EDT | ✅ yes (17:00) | Committed 8da2511. YOLOv8n (6.2MB best.pt in both model dirs), 43 pred rows, GT CSV, report log filled. Metrics: stamp P/R 1.0/1.0 IoU 0.96; signature P/R 0.91/1.0 IoU 0.87 (high = easy synthetic marks). **Superseded by a real-data re-run once human confirms.** |
 | 3 | Jordan (region/IoU) | feature/jordan-region-iou | pending (blocked on #2 finishing — sequential) | — | — | Deploy after Diana done. Needs region ground-truth (none public) → synthetic labeled set + inference on manifest images. |
 | 4 | Damir (OCR/terms) | feature/damir-ocr-terms | pending (blocked on #3) | — | — | Needs Jordan's region_predictions.csv (+ Diana's stamp/sig preds). |
 | 5 | Hessam (integration/Streamlit) | feature/hessam-integration-streamlit | pending (blocked on #1-4) | — | — | Runs last; integrates all outputs into final JSON + demo + report/deck assembly. |
