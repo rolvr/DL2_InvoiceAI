@@ -1,0 +1,35 @@
+# Core numerical / data handling
+numpy
+pandas
+scikit-learn
+
+# Visualization
+matplotlib
+plotly
+
+# Image processing
+opencv-python
+pillow
+
+# Deep learning (both frameworks available; teams may pick per notebook)
+tensorflow
+keras
+torch
+torchvision
+
+# Object detection (YOLO fallback implementation, see model_interface_contract.md)
+ultralytics
+
+# OCR
+pytesseract
+easyocr
+
+# App / demo
+streamlit
+
+# Dataset download
+kaggle
+
+# Utilities
+tqdm
+PyYAML

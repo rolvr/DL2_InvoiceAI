@@ -1,0 +1,22 @@
+{
+  "region_labels": [
+    "invoice_header",
+    "seller_info",
+    "buyer_info",
+    "invoice_number_region",
+    "date_region",
+    "due_date_region",
+    "reference_numbers_region",
+    "line_items_table",
+    "subtotal_region",
+    "tax_region",
+    "total_amount_region",
+    "payment_terms_region",
+    "terms_and_conditions_region",
+    "bank_details_region"
+  ],
+  "visual_element_labels": [
+    "stamp",
+    "signature"
+  ]
+}

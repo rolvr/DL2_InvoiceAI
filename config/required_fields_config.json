@@ -1,0 +1,41 @@
+{
+  "default_required_fields": [
+    {
+      "field_name": "PO Reference",
+      "required": true,
+      "keywords": ["PO", "P.O.", "purchase order", "po ref"],
+      "patterns": ["PO[-\\s]?[0-9A-Z]+"]
+    },
+    {
+      "field_name": "Order Number",
+      "required": true,
+      "keywords": ["order no", "order number", "sales order"],
+      "patterns": ["ORD[-\\s]?[0-9A-Z]+"]
+    },
+    {
+      "field_name": "Contract Number",
+      "required": false,
+      "keywords": ["contract no", "contract number", "agreement no"],
+      "patterns": ["CN[-\\s]?[0-9A-Z]+"]
+    },
+    {
+      "field_name": "Project Reference",
+      "required": false,
+      "keywords": ["project ref", "project number", "project code"],
+      "patterns": ["PRJ[-\\s]?[0-9A-Z]+"]
+    },
+    {
+      "field_name": "Insurance Policy Number",
+      "required": false,
+      "keywords": ["policy no", "policy number", "insurance policy"],
+      "patterns": ["[A-Z]{2,5}[-\\s]?[0-9]{5,12}"]
+    },
+    {
+      "field_name": "Bill of Lading Number",
+      "required": false,
+      "keywords": ["BL no", "B/L", "bill of lading"],
+      "patterns": ["[A-Z0-9-]{6,20}"]
+    }
+  ],
+  "custom_fields": []
+}
