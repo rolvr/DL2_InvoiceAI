@@ -96,3 +96,64 @@ filesystem (see `../ORCHESTRATION.md`).
   invoice batches → new real manifest; (3) re-run Diana on real SignverOD/StaVer; (4) then Jordan →
   Damir → Hessam on real data. Confirm approach with human before executing.
 - **Next:** await human "download complete / go" message.
+
+### 2026-07-21 17:41 EDT — Human confirmed download; Rolando RE-RUN on real data deployed
+- Human gave go. Orchestrator committed housekeeping, removed the 38 `synthetic_invoice_*`
+  leftovers from `data/raw/invoices/`, then deployed a fresh Rolando agent to redo ingestion on
+  the real invoice batches (750-image stratified cap, unique batch-prefixed doc_ids, document the
+  annotation-CSV schema).
+
+### 2026-07-21 18:10 EDT — Rolando real re-run COMPLETE + verified (committed 869c68b)
+- The Rolando agent launched `nbconvert` in the background and its turn ended before finishing;
+  its transcript was later NOT resumable. Orchestrator waited for the notebook process to exit
+  (background waiter), then independently verified: real manifest 750 rows (0 synthetic, unique
+  doc_ids like `batch1-0011`, POSIX paths, split 524/120/106, real dims 1654×2339), figures + QA
+  report regenerated. Orchestrator then finished the leftover steps: appended the real-data
+  re-run section to `rolando_report_log.md` (incl. annotation-CSV schema), ran validate (Rolando
+  rows OK), removed a stray root `yolov8n.pt` (+ gitignored `*.pt`), and committed scoped (869c68b).
+- **Annotation CSV = real ground truth:** `data/raw/invoices/batch_N/batch_N/batchN_*.csv` columns
+  `File Name, Json Data{invoice,items,subtotal,payment_instructions}, OCRed Text`. Damir should use
+  these (real OCR + structured extraction targets). Jordan: no pixel bboxes here → still needs a
+  heuristic/synthetic region-box approach on the real images.
+
+### 2026-07-21 18:15 EDT — PAUSING for session usage limit
+- Repo left resumable: on branch `main`, clean tree, real manifest on disk + durable in Rolando's
+  branch member-outputs mirror. Logs updated. Diana's synthetic run parked on its branch.
+- **NEXT ACTION ON RESUME → re-run Diana on REAL data.** Use the resume prompt below.
+
+---
+
+## ▶️ RESUME PROMPT (paste to the next session after reset)
+
+> Resume the invoice-image-processing orchestration (you are Hessam/Opus, the orchestrator).
+> Read `ai_cowork/ORCHESTRATION.md`, `ai_cowork/logs/job_log.md`, and this status_log first, then
+> VERIFY state on disk: `git branch --show-current` (expect `main`), `git log --oneline --all -12`,
+> and `python scripts/validate_dataset_paths.py`. Confirm the real 750-row manifest
+> (`data/processed/invoice_manifest.csv`, 0 synthetic refs) is present.
+>
+> Rolando is DONE on real data (commit 869c68b). Diana's only completed run is SYNTHETIC (commit
+> 8da2511) and must be REDONE on real data. **Deploy the next agent: Diana, on the REAL datasets,
+> SEQUENTIALLY (one agent at a time — do NOT parallelize; no worktree isolation).** Brief her from
+> `ai_cowork/agents/diana_agent_prompt.md` PLUS these real-data specifics:
+>   - Real SignverOD is in `data/raw/signatures/` (images/, train.csv, test.csv, categories.csv,
+>     image_ids.csv, labelmap.txt, tfrecords/) — parse its real signature bounding-box annotations.
+>   - Real StaVer stamp data is in `data/raw/stamps/StaVer/` (scans + ground-truth maps).
+>   - Detect real `stamp` vs real `signature` as two separate labels; evaluate per-class
+>     precision/recall/IoU via `src/iou.py`. Keep predictions keyed so Hessam can integrate.
+>   - She may reuse her committed YOLOv8n pipeline/code from branch `feature/diana-stamp-signature`
+>     (commit 8da2511) but must retrain/evaluate on the REAL data, not the synthetic overlays.
+>   - Work on `feature/diana-stamp-signature`, scoped commits only (no `git add -A`), fill the
+>     real-data section of `presentation/member_reports/diana_report_log.md`.
+>   - Tell her to EXECUTE her notebook and to run `nbconvert` FOREGROUND (blocking) or otherwise
+>     not return until it's finished — the previous agents returned before their background
+>     notebook finished, forcing manual orchestrator finalize. She must complete validate + commit
+>     herself.
+> After Diana verifies on disk, continue sequentially: Jordan (region detection on real manifest;
+> region bboxes not in annotation CSVs → heuristic/synthetic region boxes), then Damir (OCR +
+> params + terms — now has REAL OCR/structured ground truth in the batch annotation CSVs described
+> above), then Hessam (integration → final JSON → Streamlit → report/deck). Update job_log +
+> status_log after each stage. Orchestrator home branch = `main`.
+>
+> Known gotcha: subagents that background their notebook run may return before it finishes — verify
+> outputs on disk (don't trust the completion message alone), and their transcripts may be
+> unresumable, so be ready to finish finalize/commit yourself as was done for Rolando.
