@@ -58,3 +58,14 @@ other member (Diana, Jordan, Damir, Hessam) builds on top of.
   Hessam's notebooks hardcode them per `model_interface_contract.md`.
 - If you need to add a new shared helper function, put it in `src/data_loader.py` or
   `src/image_preprocessing.py` (both are yours to extend), not in another owner's module.
+
+## Report log deliverable (required — feeds the group report & slide deck)
+
+Keep a documented report log at `presentation/member_reports/rolando_report_log.md` (a stub and
+`_TEMPLATE.md` already exist there). Fill in every section: what you did; approach & key decisions
+(real vs synthetic data and why, preprocessing/split choices); **challenges faced and how you
+handled them**; results/metrics with file references; assumptions/limitations; handoff notes; and
+figures worth putting on a slide. Update it as you work, not only at the end, so nothing is lost
+if the session is interrupted. Be specific and honest about difficulties — this is the raw
+material Hessam uses to assemble the report and presentation. Treat this log as one of your
+required outputs; confirm it is filled in before declaring done.

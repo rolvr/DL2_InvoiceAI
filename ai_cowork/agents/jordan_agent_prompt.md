@@ -66,3 +66,16 @@ the region boxes you produce.
 - Do NOT change the output file paths/names — Damir and Hessam hardcode them.
 - If you change `src/iou.py`'s public function signatures, flag it loudly — Diana and Hessam
   also depend on them.
+
+## Report log deliverable (required — feeds the group report & slide deck)
+
+Keep a documented report log at `presentation/member_reports/jordan_report_log.md` (a stub and
+`_TEMPLATE.md` already exist there). Fill in every section: what you did; approach & key decisions
+(true SSD vs documented YOLOv8 fallback and why, how region ground truth was obtained — including
+any manual annotation subset); **challenges faced and how you handled them** (e.g. no public labels
+for terms/payment/reference/line-items/total regions); per-label and overall IoU results with file
+references; assumptions/limitations; handoff notes; and figures worth putting on a slide (region
+examples, an SSD architecture diagram, an IoU explainer). Update it as you work, not only at the
+end. Be specific and honest about difficulties — this is the raw material Hessam uses to assemble
+the report and presentation. Treat this log as one of your required outputs; confirm it is filled
+in before declaring done.

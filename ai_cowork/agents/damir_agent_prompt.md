@@ -72,3 +72,16 @@ notebook logic is testable independently, then swap to the real files once avail
 - Do NOT change the output file paths/names — Hessam hardcodes them.
 - Do NOT OCR full invoice pages — this breaks the detection-first design intent and will
   produce much worse text quality anyway.
+
+## Report log deliverable (required — feeds the group report & slide deck)
+
+Keep a documented report log at `presentation/member_reports/damir_report_log.md` (a stub and
+`_TEMPLATE.md` already exist there). Fill in every section: what you did; approach & key decisions
+(EasyOCR vs Tesseract, regex/keyword design for parameters and clauses, how missing upstream inputs
+were stubbed); **challenges faced and how you handled them** (e.g. OCR quality on low-res/skewed
+crops); results/metrics with file references (OCR coverage, confidence, required-field presence
+rate); assumptions/limitations; handoff notes; and figures worth putting on a slide (a crop → OCR
+text → extracted parameter walkthrough). Update it as you work, not only at the end. Be specific
+and honest about difficulties — this is the raw material Hessam uses to assemble the report and
+presentation. Treat this log as one of your required outputs; confirm it is filled in before
+declaring done.

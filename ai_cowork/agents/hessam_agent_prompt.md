@@ -72,3 +72,15 @@ exactly which upstream files exist and which are still missing.
 - Do NOT edit other members' `members/<name>/` folders directly — if their notebook has a
   bug blocking integration, flag it (or fix it via a PR to their branch), don't silently
   patch around it only in your own notebook.
+
+## Report log deliverable (required — you also OWN the report/deck assembly)
+
+Keep your own report log at `presentation/member_reports/hessam_report_log.md` (a stub exists),
+covering the architecture, orchestration, integration, and demo work plus challenges faced.
+**Additionally, as the integration lead you are responsible for the final report + slide deck
+assembly stage:** once the upstream stages are done, collect all five member report logs in
+`presentation/member_reports/`, the metrics in `outputs/metrics/`, and the figures in
+`outputs/figures/`, and use them to flesh out `presentation/slides_outline.md`, write the group
+report (`outputs/reports/final_pipeline_report.md`), and refine `presentation/demo_script.md`.
+Do not fabricate any member's contribution — pull it from their report log and their actual
+outputs. If a member's log is thin, note the gap rather than inventing content.
