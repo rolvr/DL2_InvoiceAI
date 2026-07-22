@@ -170,6 +170,88 @@ def verify_inputs(required: list) -> None:
         )
 
 
+def resolve_dataset_root(base: str | Path, markers: list[str], max_depth: int = 4) -> Path:
+    """Find the folder that actually contains `markers`, tolerating extra nesting.
+
+    Copying a dataset into Drive by dragging its top folder is an easy and very common
+    mistake: you end up with `datasets/ocr_multitype/invoice/train/...` instead of
+    `datasets/ocr_multitype/train/...`. Rather than demand a multi-GB re-upload, search
+    downward for the level that really holds the expected entries.
+
+    `markers` may contain nested names, e.g. "train/annotations".
+    """
+    base = Path(base)
+    if not base.exists():
+        raise FileNotFoundError(
+            f"resolve_dataset_root: '{base}' does not exist.\n"
+            f"Create it in Drive and copy the dataset in — see inputs/datasets/COPY_MAP.md."
+        )
+
+    def has(p: Path) -> bool:
+        return all((p / m).exists() for m in markers)
+
+    if has(base):
+        return base
+
+    frontier = [base]
+    for _ in range(max_depth):
+        nxt = []
+        for d in frontier:
+            try:
+                subs = sorted(x for x in d.iterdir() if x.is_dir())
+            except (PermissionError, OSError):
+                continue
+            for s in subs:
+                if has(s):
+                    print(f"[colab_bootstrap] NOTE: '{base.name}' is nested one level deeper "
+                          f"than expected — using '{s.relative_to(base)}'. Harmless.")
+                    return s
+                nxt.append(s)
+        frontier = nxt
+
+    listing = "\n".join(f"    {p.name}/" for p in sorted(base.iterdir())[:15]) or "    (empty)"
+    raise FileNotFoundError(
+        f"resolve_dataset_root: could not find {markers} anywhere under '{base}'.\n"
+        f"What is actually there:\n{listing}\n\n"
+        f"See inputs/datasets/COPY_MAP.md for the expected layout."
+    )
+
+
+def resolve_files_dir(base: str | Path, pattern: str, max_depth: int = 3) -> Path:
+    """Return the folder that actually holds files matching `pattern`.
+
+    Guards against the *other* common copy mistake: dragging the outer of two identically
+    named folders, e.g. StaVer's `scans/scans/` landing as `stamps/scans/scans/`. If `base`
+    holds no matching files but a subfolder does, return the subfolder.
+    """
+    base = Path(base)
+    if not base.exists():
+        raise FileNotFoundError(f"resolve_files_dir: '{base}' does not exist.")
+    if any(base.glob(pattern)):
+        return base
+
+    frontier = [base]
+    for _ in range(max_depth):
+        nxt = []
+        for d in frontier:
+            try:
+                subs = sorted(x for x in d.iterdir() if x.is_dir())
+            except (PermissionError, OSError):
+                continue
+            for s in subs:
+                if any(s.glob(pattern)):
+                    print(f"[colab_bootstrap] NOTE: '{base.name}' was copied one level deeper "
+                          f"than expected — using '{s.relative_to(base)}'. Harmless.")
+                    return s
+                nxt.append(s)
+        frontier = nxt
+
+    raise FileNotFoundError(
+        f"resolve_files_dir: no files matching '{pattern}' under '{base}'.\n"
+        f"Check inputs/datasets/COPY_MAP.md — the folder may be empty or hold the wrong files."
+    )
+
+
 def publish(
     member: str,
     src_path: str | Path,

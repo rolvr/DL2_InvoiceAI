@@ -102,24 +102,30 @@ RUN_TS = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())   # one archive folder f
 T0 = time.time()""")
 
 
-def c_drive_data(required: dict, note=""):
-    """Datasets are read from Google Drive (pre-downloaded), so no Kaggle token is needed."""
-    checks = "\n".join(f'    DATA / "{p}",' for p in required.values())
-    shows = "\n".join(
-        f'print(f"  {k:<12s}", DATA / "{v}", "->",'
-        f' sum(1 for _ in (DATA / "{v}").rglob("*") if _.is_file()), "files")'
-        for k, v in required.items()
-    )
+def c_drive_data(specs, note=""):
+    """Datasets are read from Google Drive (pre-downloaded), so no Kaggle token is needed.
+
+    `specs` is a list of (var_name, folder_name, markers). Roots are resolved with
+    `resolve_dataset_root`, which tolerates the dataset having been copied one or two levels
+    deeper than expected - a very easy mistake when dragging folders into Drive.
+    """
+    lines = []
+    for var, folder, markers in specs:
+        lines.append(f'{var} = CB.resolve_dataset_root(DATA / "{folder}", {markers!r})')
+    lines.append("")
+    for var, folder, _ in specs:
+        lines.append(f'print(f"  {folder:<14s} -> {{{var}}}")')
+        lines.append(f'print(f"  {"":<14s}    "'
+                     f' f"{{sum(1 for _ in {var}.rglob(chr(42)) if _.is_file()):,}} files")')
+    body = "\n".join(lines)
     return co(f"""# --- Datasets: read straight from Google Drive (NO Kaggle token needed) ------
 # {note}
+# Paths are resolved tolerantly: if a dataset was copied one level too deep
+# (e.g. ocr_multitype/invoice/train/... instead of ocr_multitype/train/...),
+# it is found anyway and a NOTE is printed. No re-upload needed.
 DATA = paths.inputs / "datasets"
 
-CB.verify_inputs([
-{checks}
-])
-
-print("datasets found in Drive:")
-{shows}""")
+{body}""")
 
 
 def c_runblock(member, extra=""):
@@ -199,7 +205,7 @@ Two corrections here:
         c_gpu(),
         c_bootstrap(["pandas", "pillow", "tqdm"]),
         c_profile(),
-        c_drive_data({"invoices_raw": "invoices_raw"},
+        c_drive_data([("RAW", "invoices_raw", ["batch_1"])],
                      "OPTIONAL stage: the manifest in inputs/ was already produced from this "
                      "data locally. You only need invoices_raw/ in Drive if you want to "
                      "re-derive the manifest yourself."),
@@ -207,7 +213,6 @@ Two corrections here:
 import pandas as pd
 from PIL import Image
 
-RAW = DATA / "invoices_raw"
 roots = [p for p in RAW.rglob("batch*_*") if p.is_dir() and any(p.glob("*.jpg"))]
 
 # batch_3/batch_1/* and batch_3/batch_2/* duplicate batches 1 and 2 - drop them.
@@ -401,12 +406,12 @@ detection counts and confidence distributions there — never a precision/recall
         c_gpu(),
         c_bootstrap(["ultralytics", "opencv-python-headless", "pandas"]),
         c_profile(),
-        c_drive_data({"signatures": "signatures", "stamps": "stamps"},
-                     "Both were pre-downloaded into Drive, so this cell only checks they exist."),
+        c_drive_data([("SIG", "signatures", ["images", "image_ids.csv"]),
+                      ("STA", "stamps", ["scans", "ground-truth-maps"])],
+                     "Both were pre-downloaded into Drive."),
         co("""# --- SignverOD -> pixel boxes for category_id == 1 (signature) ----------------
 import pandas as pd, ast, cv2, numpy as np
 
-SIG = DATA / "signatures"
 ids = pd.read_csv(SIG / "image_ids.csv")            # height,width,id,file_name
 tr  = pd.read_csv(SIG / "train.csv")                # area,bbox,category_id,id,image_id
 
@@ -424,9 +429,12 @@ print("area check:", np.allclose(df.area.head(20),
       ((df.xmax-df.xmin)/df.width * (df.ymax-df.ymin)/df.height).head(20), atol=2e-3))
 df.head(3)[["file_name", "xmin", "ymin", "xmax", "ymax"]]"""),
         co("""# --- StaVer -> boxes from the binary GT masks --------------------------------
-STA = DATA / "stamps"
-scans = {p.stem: p for p in (STA / "scans").glob("*.png")}
-masks = sorted((STA / "ground-truth-maps").glob("*-gt.png"))
+# resolve_files_dir guards against StaVer's scans/scans double-nesting surviving the copy
+SCAN_DIR = CB.resolve_files_dir(STA / "scans", "*.png")
+MASK_DIR = CB.resolve_files_dir(STA / "ground-truth-maps", "*.png")
+INFO_DIR = CB.resolve_files_dir(STA / "info", "*.txt")
+scans = {p.stem: p for p in SCAN_DIR.glob("*.png")}
+masks = sorted(MASK_DIR.glob("*-gt.png"))
 print("scans:", len(scans), "| gt masks:", len(masks))
 
 def boxes_from_mask(mask_path, min_area_frac=2e-4):
@@ -450,7 +458,7 @@ for mp in masks:
     if stem not in scans:
         continue
     bx, (W, H) = boxes_from_mask(mp)
-    info = STA / "info" / f"{stem}.txt"
+    info = INFO_DIR / f"{stem}.txt"
     expected = None
     if info.exists():
         try:
@@ -502,7 +510,7 @@ for i, s in enumerate(stems):
 
 # signatures
 sig_imgs = sorted(df.file_name.unique())[:cap]
-IMG_DIR = SIG / "images"
+IMG_DIR = CB.resolve_files_dir(SIG / "images", "*.png")
 for i, fn in enumerate(sig_imgs):
     g = df[df.file_name == fn]
     p = IMG_DIR / fn
@@ -715,14 +723,14 @@ inference is reported as counts."""),
         c_gpu(),
         c_bootstrap(["ultralytics", "opencv-python-headless", "pandas", "rapidfuzz"]),
         c_profile(),
-        c_drive_data({"ocr_multitype": "ocr_multitype"},
+        c_drive_data([("BASE", "ocr_multitype",
+                       ["train/annotations", "val/annotations", "test/annotations"])],
                      "548 MB, pre-downloaded into Drive. This is the dataset with the 52,331 "
                      "real polygon boxes."),
         co("""# --- Parse the JSON annotations ----------------------------------------------
 import pandas as pd, numpy as np, cv2
 from rapidfuzz import fuzz
 
-BASE = DATA / "ocr_multitype"
 print("dataset root:", BASE)
 for sp in ["train", "val", "test"]:
     print(f"  {sp}: {len(list((BASE/sp/'annotations').glob('*.json')))} ann, "
@@ -986,13 +994,13 @@ them. If you find a real bug, report it rather than forking the logic."""),
         c_gpu(),
         c_bootstrap(["easyocr", "rapidfuzz", "pandas", "opencv-python-headless", "jiwer"]),
         c_profile(),
-        c_drive_data({"ocr_multitype": "ocr_multitype"},
+        c_drive_data([("BASE", "ocr_multitype",
+                       ["train/annotations", "val/annotations", "test/annotations"])],
                      "Primary eval set. The secondary invoice check reads inputs/images/ + "
                      "inputs/annotations/, which are already in Drive."),
         co("""# --- Load the primary GT (per-box transcriptions + entities) -----------------
 import pandas as pd, numpy as np, cv2
 
-BASE = DATA / "ocr_multitype"
 def load(sp):
     out = []
     for ap in sorted((BASE/sp/"annotations").glob("*.json")):
@@ -1406,10 +1414,150 @@ print("done")"""),
     return c
 
 
+# ================================================================= 00 PREFLIGHT
+def nb_preflight():
+    return [
+        md("""# 00 — Preflight: is the Drive folder set up correctly?
+
+**Run this first, once, before anybody starts a real notebook.** It takes about a minute, needs
+no GPU, and tells you exactly what is present, what is missing, and what is nested at the wrong
+depth — so nobody discovers a bad path 40 minutes into a training run.
+
+It only reads; it changes nothing."""),
+        co("""from google.colab import drive
+import sys, json
+from pathlib import Path
+drive.mount("/content/drive")
+
+DRIVE_ROOT = "/content/drive/MyDrive/DL2_InvoiceAI"    # <-- change if yours differs
+root = Path(DRIVE_ROOT)
+print("root exists:", root.exists(), "->", root)
+if root.exists():
+    for p in sorted(root.iterdir()):
+        print("   ", p.name + ("/" if p.is_dir() else ""))"""),
+        co("""# --- code/ : the repo snapshot the notebooks import from ---------------------
+OK, BAD = [], []
+
+def check(label, cond, detail=""):
+    (OK if cond else BAD).append(label)
+    print(f"  [{'OK ' if cond else 'FAIL'}] {label}{('  ' + detail) if detail else ''}")
+
+print("code/")
+code = root / "code"
+check("code/colab_bootstrap.py", (code/"colab_bootstrap.py").exists())
+check("code/src/compute_profile.py", (code/"src"/"compute_profile.py").exists())
+check("code/src/iou.py", (code/"src"/"iou.py").exists())
+n_src = len(list((code/"src").glob("*.py"))) if (code/"src").exists() else 0
+check("code/src/ has modules", n_src >= 10, f"{n_src} .py files")
+
+sys.path.insert(0, str(code))
+import colab_bootstrap as CB
+paths = CB.setup_paths(root)
+print("  bootstrap imported OK")"""),
+        co("""# --- inputs/ : manifest, invoice images, annotations -------------------------
+print("inputs/")
+import pandas as pd
+man_p = paths.inputs / "invoice_manifest.csv"
+check("inputs/invoice_manifest.csv", man_p.exists())
+if man_p.exists():
+    man = pd.read_csv(man_p)
+    check("  manifest has 750 rows", len(man) == 750, f"{len(man)} rows")
+    if "has_ground_truth" in man:
+        cov = man.has_ground_truth.mean()
+        check("  ground-truth coverage is 100%", cov > 0.99, f"{cov:.1%}")
+    imgs = list((paths.inputs/"images").glob("*.jpg"))
+    check("  inputs/images/ has 750 jpgs", len(imgs) == 750, f"{len(imgs)} files")
+    missing = [r.image_path for r in man.head(50).itertuples()
+               if not (root / r.image_path).exists()]
+    check("  manifest paths resolve", not missing,
+          f"{len(missing)} of first 50 missing" if missing else "sampled 50")
+
+ann = list((paths.inputs/"annotations").glob("batch1_*.csv"))
+check("inputs/annotations/batch1_*.csv", len(ann) == 3, f"{len(ann)} of 3")"""),
+        co("""# --- inputs/datasets/ : the three real datasets ------------------------------
+print("inputs/datasets/")
+DATA = paths.inputs / "datasets"
+
+def try_root(label, folder, markers):
+    try:
+        p = CB.resolve_dataset_root(DATA / folder, markers)
+        extra = "" if p == DATA/folder else f"  (nested deeper: .../{p.name} - handled)"
+        check(label, True, str(p.relative_to(DATA)) + extra)
+        return p
+    except FileNotFoundError as e:
+        check(label, False, str(e).splitlines()[0])
+        return None
+
+OCR = try_root("datasets/ocr_multitype", "ocr_multitype",
+               ["train/annotations", "val/annotations", "test/annotations"])
+SIG = try_root("datasets/signatures", "signatures", ["images", "image_ids.csv"])
+STA = try_root("datasets/stamps", "stamps", ["scans", "ground-truth-maps"])
+
+if OCR:
+    for sp, exp in [("train", 778), ("val", 97), ("test", 98)]:
+        ni = len(list((OCR/sp/"images").glob("*")))
+        na = len(list((OCR/sp/"annotations").glob("*.json")))
+        check(f"  ocr {sp}", ni == exp and na == exp, f"{ni} images / {na} json (expect {exp})")
+
+if SIG:
+    try:
+        d = CB.resolve_files_dir(SIG/"images", "*.png")
+        npng = len(list(d.glob("*.png")))
+        njpg = len(list(d.glob("*.jpeg"))) + len(list(d.glob("*.jpg")))
+        # SignverOD ships a mix: 2,694 .png + 71 .jpeg = 2,765
+        check("  signatures/images", npng + njpg >= 2700,
+              f"{npng} png + {njpg} jpeg = {npng+njpg} (expect 2,765)")
+    except FileNotFoundError as e:
+        check("  signatures/images", False, str(e).splitlines()[0])
+    for f in ["train.csv", "test.csv", "image_ids.csv", "categories.csv", "labelmap.txt"]:
+        check(f"  signatures/{f}", (SIG/f).exists())
+
+if STA:
+    for sub, pat, exp in [("scans", "*.png", 427), ("ground-truth-maps", "*.png", 400),
+                          ("info", "*.txt", 400)]:
+        try:
+            d = CB.resolve_files_dir(STA/sub, pat)
+            n = len(list(d.glob(pat)))
+            note = "" if d == STA/sub else f" (double-nested {sub}/{sub} - handled)"
+            check(f"  stamps/{sub}", n >= exp*0.9, f"{n} files (expect {exp}){note}")
+        except FileNotFoundError as e:
+            check(f"  stamps/{sub}", False, str(e).splitlines()[0])"""),
+        co("""# --- Verdict ------------------------------------------------------------------
+print("\\n" + "="*66)
+print(f"PASSED {len(OK)}   FAILED {len(BAD)}")
+print("="*66)
+if BAD:
+    print("\\nFix these before running a member notebook:\\n")
+    for b in BAD:
+        print("  -", b)
+    print("\\nSee inputs/datasets/COPY_MAP.md for the exact source -> destination mapping.")
+    print("A 'nested deeper' NOTE above is NOT a failure - it is handled automatically.")
+else:
+    print("\\nEverything checks out. Members can run their notebooks:")
+    print("  02 Diana   needs datasets/signatures + datasets/stamps")
+    print("  03 Jordan  needs datasets/ocr_multitype")
+    print("  04 Damir   needs datasets/ocr_multitype + inputs/annotations")
+    print("  05 Hessam  needs the others' published outputs (run last)")
+    print("  01 Rolando is OPTIONAL - the manifest was already built locally")"""),
+        md("""## If something failed
+
+| Symptom | Fix |
+|---|---|
+| `code/colab_bootstrap.py` missing | copy `colab/colab_bootstrap.py` into Drive `code/` |
+| a dataset root not found | check `inputs/datasets/COPY_MAP.md`; the folder may be empty |
+| counts lower than expected | the upload is probably still running — wait, then re-run |
+| `stamps/scans` shows 0 | you copied the **outer** `scans` folder; the inner one holds the PNGs |
+
+A **"nested deeper — handled"** note is not an error. It means you dragged the parent folder in
+and the notebooks quietly compensate; no re-upload is needed."""),
+    ]
+
+
 # ================================================================= write
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     books = {
+        "00_preflight_check_colab.ipynb": nb_preflight(),
         "01_rolando_data_ingestion_colab.ipynb": nb_rolando(),
         "02_diana_stamp_signature_colab.ipynb": nb_diana(),
         "03_jordan_region_detection_colab.ipynb": nb_jordan(),
