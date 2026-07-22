@@ -102,26 +102,24 @@ RUN_TS = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())   # one archive folder f
 T0 = time.time()""")
 
 
-def c_kaggle(slugs, note=""):
-    lines = "\n".join(
-        f'get_ipython().system("kaggle datasets download -d {s} -p /content/raw/{n} --unzip -q")'
-        for n, s in slugs.items()
+def c_drive_data(required: dict, note=""):
+    """Datasets are read from Google Drive (pre-downloaded), so no Kaggle token is needed."""
+    checks = "\n".join(f'    DATA / "{p}",' for p in required.values())
+    shows = "\n".join(
+        f'print(f"  {k:<12s}", DATA / "{v}", "->",'
+        f' sum(1 for _ in (DATA / "{v}").rglob("*") if _.is_file()), "files")'
+        for k, v in required.items()
     )
-    return co(f"""# --- Kaggle raw data (NOT kept in Drive — multi-GB and regenerable) -----------
+    return co(f"""# --- Datasets: read straight from Google Drive (NO Kaggle token needed) ------
 # {note}
-if not Path("/root/.kaggle/kaggle.json").exists():
-    print("Upload your kaggle.json (Kaggle > Settings > API > Create New Token):")
-    from google.colab import files
-    files.upload()
-    os.makedirs("/root/.kaggle", exist_ok=True)
-    shutil.move("kaggle.json", "/root/.kaggle/kaggle.json")
-    os.chmod("/root/.kaggle/kaggle.json", 0o600)
+DATA = paths.inputs / "datasets"
 
-{lines}
-print("\\ndownloaded:")
-for p in sorted(Path("/content/raw").glob("*")):
-    n = sum(1 for _ in p.rglob("*") if _.is_file())
-    print(f"  {{p.name}}: {{n}} files")""")
+CB.verify_inputs([
+{checks}
+])
+
+print("datasets found in Drive:")
+{shows}""")
 
 
 def c_runblock(member, extra=""):
@@ -183,9 +181,9 @@ def nb_rolando():
                 "Builds the invoice manifest that every other stage depends on. **This version "
                 "samples annotation-aware**, so the manifest carries OCR/field ground truth "
                 "instead of the 26% coverage the first local run produced.",
-                "Kaggle invoice batches (~6 GB)",
+                "Drive `inputs/datasets/invoices_raw/` (optional — see note)",
                 "`invoice_manifest.csv`, QA report, 2 figures",
-                "~20–35 min (mostly the Kaggle download)"),
+                "~10–20 min (optional — the manifest was already built locally)"),
         md("""### Why this notebook exists
 
 The first manifest stratified across all three batches for *visual diversity*, blind to labels.
@@ -201,12 +199,15 @@ Two corrections here:
         c_gpu(),
         c_bootstrap(["pandas", "pillow", "tqdm"]),
         c_profile(),
-        c_kaggle({"invoices": SLUG_INVOICES}, "~6 GB — the slowest cell in this notebook."),
+        c_drive_data({"invoices_raw": "invoices_raw"},
+                     "OPTIONAL stage: the manifest in inputs/ was already produced from this "
+                     "data locally. You only need invoices_raw/ in Drive if you want to "
+                     "re-derive the manifest yourself."),
         co("""# --- Locate the real batch folders, excluding batch_3's duplicate copies ------
 import pandas as pd
 from PIL import Image
 
-RAW = Path("/content/raw/invoices")
+RAW = DATA / "invoices_raw"
 roots = [p for p in RAW.rglob("batch*_*") if p.is_dir() and any(p.glob("*.jpg"))]
 
 # batch_3/batch_1/* and batch_3/batch_2/* duplicate batches 1 and 2 - drop them.
@@ -378,7 +379,7 @@ def nb_diana():
                 "Trains a **2-class** detector (`stamp`, `signature`) on real SignverOD + StaVer "
                 "data, evaluates per class on a real held-out split, then runs inference on the "
                 "invoice images.",
-                "SignverOD + StaVer (Kaggle), invoice manifest (Drive)",
+                "Drive: `datasets/signatures/`, `datasets/stamps/`, invoice manifest",
                 "`stamp_signature_predictions.csv`, metrics JSON, figure, weights",
                 "~45–90 min on a T4"),
         md("""### The rule that cannot bend
@@ -400,11 +401,12 @@ detection counts and confidence distributions there — never a precision/recall
         c_gpu(),
         c_bootstrap(["ultralytics", "opencv-python-headless", "pandas"]),
         c_profile(),
-        c_kaggle({"signatures": SLUG_SIGN, "stamps": SLUG_STAMP}, "~3.4 GB total."),
+        c_drive_data({"signatures": "signatures", "stamps": "stamps"},
+                     "Both were pre-downloaded into Drive, so this cell only checks they exist."),
         co("""# --- SignverOD -> pixel boxes for category_id == 1 (signature) ----------------
 import pandas as pd, ast, cv2, numpy as np
 
-SIG = next(p for p in Path("/content/raw/signatures").rglob("image_ids.csv")).parent
+SIG = DATA / "signatures"
 ids = pd.read_csv(SIG / "image_ids.csv")            # height,width,id,file_name
 tr  = pd.read_csv(SIG / "train.csv")                # area,bbox,category_id,id,image_id
 
@@ -422,9 +424,9 @@ print("area check:", np.allclose(df.area.head(20),
       ((df.xmax-df.xmin)/df.width * (df.ymax-df.ymin)/df.height).head(20), atol=2e-3))
 df.head(3)[["file_name", "xmin", "ymin", "xmax", "ymax"]]"""),
         co("""# --- StaVer -> boxes from the binary GT masks --------------------------------
-STA = next(p for p in Path("/content/raw/stamps").rglob("ground-truth-maps")).parent
-scans = {p.stem: p for p in (STA / "scans" / "scans").glob("*.png")}
-masks = sorted((STA / "ground-truth-maps" / "ground-truth-maps").glob("*-gt.png"))
+STA = DATA / "stamps"
+scans = {p.stem: p for p in (STA / "scans").glob("*.png")}
+masks = sorted((STA / "ground-truth-maps").glob("*-gt.png"))
 print("scans:", len(scans), "| gt masks:", len(masks))
 
 def boxes_from_mask(mask_path, min_area_frac=2e-4):
@@ -448,7 +450,7 @@ for mp in masks:
     if stem not in scans:
         continue
     bx, (W, H) = boxes_from_mask(mp)
-    info = STA / "info" / "info" / f"{stem}.txt"
+    info = STA / "info" / f"{stem}.txt"
     expected = None
     if info.exists():
         try:
@@ -678,7 +680,7 @@ def nb_jordan():
                 "Trains a region detector on the **OCR Dataset of Multi-type Documents** — which "
                 "ships **52,331 real polygon boxes with transcriptions**. No synthetic or "
                 "heuristic boxes are needed.",
-                "OCR Dataset (Kaggle), invoice manifest (Drive)",
+                "Drive: `datasets/ocr_multitype/`, invoice manifest",
                 "`region_predictions.csv`, `region_iou_metrics.json`, figure, weights",
                 "~45–75 min on a T4"),
         md("""### Read this — your brief changed
@@ -713,13 +715,14 @@ inference is reported as counts."""),
         c_gpu(),
         c_bootstrap(["ultralytics", "opencv-python-headless", "pandas", "rapidfuzz"]),
         c_profile(),
-        c_kaggle({"ocrset": SLUG_OCRSET}, "~550 MB — much smaller than the invoice batches."),
+        c_drive_data({"ocr_multitype": "ocr_multitype"},
+                     "548 MB, pre-downloaded into Drive. This is the dataset with the 52,331 "
+                     "real polygon boxes."),
         co("""# --- Parse the JSON annotations ----------------------------------------------
 import pandas as pd, numpy as np, cv2
 from rapidfuzz import fuzz
 
-BASE = next(p.parent for p in Path("/content/raw/ocrset").rglob("train/annotations")
-            if p.is_dir())
+BASE = DATA / "ocr_multitype"
 print("dataset root:", BASE)
 for sp in ["train", "val", "test"]:
     print(f"  {sp}: {len(list((BASE/sp/'annotations').glob('*.json')))} ann, "
@@ -960,7 +963,7 @@ def nb_damir():
         c_title("04", "Damir", "OCR, Business Parameters & Terms",
                 "Runs GPU OCR over invoices/receipts, scores it against **real transcriptions**, "
                 "then checks business-parameter presence and extracts payment terms.",
-                "OCR Dataset (Kaggle), invoice batches, Jordan's + Diana's predictions (Drive)",
+                "Drive: `datasets/ocr_multitype/`, `inputs/annotations/`, `inputs/images/`",
                 "`ocr_outputs.csv`, `parameter_presence_results.csv`, "
                 "`terms_extraction_results.csv`, metrics JSON",
                 "~40–70 min on a T4"),
@@ -983,13 +986,13 @@ them. If you find a real bug, report it rather than forking the logic."""),
         c_gpu(),
         c_bootstrap(["easyocr", "rapidfuzz", "pandas", "opencv-python-headless", "jiwer"]),
         c_profile(),
-        c_kaggle({"ocrset": SLUG_OCRSET, "invoices": SLUG_INVOICES},
-                 "OCR Dataset is small; the invoice batches are ~6 GB and only needed for the "
-                 "secondary eval — comment that slug out if you want a faster run."),
+        c_drive_data({"ocr_multitype": "ocr_multitype"},
+                     "Primary eval set. The secondary invoice check reads inputs/images/ + "
+                     "inputs/annotations/, which are already in Drive."),
         co("""# --- Load the primary GT (per-box transcriptions + entities) -----------------
 import pandas as pd, numpy as np, cv2
 
-BASE = next(p.parent for p in Path("/content/raw/ocrset").rglob("test/annotations") if p.is_dir())
+BASE = DATA / "ocr_multitype"
 def load(sp):
     out = []
     for ap in sorted((BASE/sp/"annotations").glob("*.json")):
@@ -1100,9 +1103,9 @@ print(tdf.head(3))
 print("\\nnon-empty extraction rate:",
       round(float(tdf.drop(columns=['document_id']).notna().any(axis=1).mean()), 3))"""),
         co("""# --- SECONDARY eval: real full-page invoices (state the denominator!) --------
-RAWINV = Path("/content/raw/invoices")
-ann = sorted(RAWINV.rglob("batch1_*.csv"))
-sec_metrics = {"skipped": True, "reason": "invoice batches not downloaded"}
+# The batch annotation CSVs and the 750 invoice images are already in Drive inputs/.
+ann = sorted((paths.inputs / "annotations").glob("batch1_*.csv"))
+sec_metrics = {"skipped": True, "reason": "no batch annotation CSVs in inputs/annotations/"}
 
 if ann:
     gt2 = pd.concat([pd.read_csv(p) for p in ann], ignore_index=True)
