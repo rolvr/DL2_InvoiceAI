@@ -1440,7 +1440,7 @@ except Exception as e:
     print("[warn] Drive mount skipped/failed:", e)
 
 root = Path(DRIVE_ROOT)
-OK, BAD, TIP = [], [], []
+OK, BAD, TIP, WARN = [], [], [], []
 
 def check(label, cond, detail="", tip=""):
     (OK if cond else BAD).append(label)
@@ -1523,14 +1523,21 @@ else:
                 check("  manifest is the NEW annotation-aware one", False,
                       "no has_ground_truth column",
                       tip="this is the OLD manifest - re-upload inputs/ from the bundle")
+            # What actually matters is that EVERY manifest image is present.
+            # Extra leftover files are untidy but harmless: nothing lists this
+            # folder, every notebook resolves images through the manifest.
             imgs = list((inputs / "images").glob("*.jpg"))
-            check("  inputs/images/ has 750 jpgs", len(imgs) == 750, f"{len(imgs)} files",
-                  tip="delete inputs/images/ in Drive and re-upload it (the set changed)")
-            miss = [r.image_path for r in man.head(50).itertuples()
+            miss = [r.image_path for r in man.itertuples()
                     if not (root / r.image_path).exists()]
-            check("  manifest paths resolve", not miss,
-                  f"{len(miss)}/50 missing" if miss else "sampled 50 OK",
-                  tip="images/ contents do not match the manifest - re-upload inputs/")
+            check("  every manifest image present", not miss,
+                  f"{len(miss)} missing of {len(man)}" if miss else f"all {len(man)} resolve",
+                  tip="re-upload inputs/images/ from the staging bundle")
+            extra = len(imgs) - len(man)
+            if extra > 0:
+                WARN.append(f"inputs/images/ holds {len(imgs)} files but the manifest needs "
+                            f"{len(man)} - {extra} stale leftovers from the previous manifest")
+                print(f"  [WARN] inputs/images/ has {extra} stale extra file(s)  "
+                      f"(harmless - Drive merges instead of replacing)")
         except Exception:
             check("  manifest readable", False)
             traceback.print_exc()
@@ -1614,8 +1621,12 @@ else:
 
 # ---------------------------------------------------------------- verdict
 print("\\n" + "=" * 70)
-print(f"PASSED {len(OK)}    FAILED {len(BAD)}")
+print(f"PASSED {len(OK)}    FAILED {len(BAD)}    WARNINGS {len(WARN)}")
 print("=" * 70)
+if WARN:
+    print("\\nWarnings (safe to ignore - nothing is blocked):\\n")
+    for w in WARN:
+        print("  -", w)
 if BAD:
     print("\\nFIX THESE:\\n")
     for t in TIP:
