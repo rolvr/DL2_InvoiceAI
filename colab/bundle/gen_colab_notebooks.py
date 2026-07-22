@@ -1424,121 +1424,214 @@ no GPU, and tells you exactly what is present, what is missing, and what is nest
 depth — so nobody discovers a bad path 40 minutes into a training run.
 
 It only reads; it changes nothing."""),
-        co("""from google.colab import drive
-import sys, json
-from pathlib import Path
-drive.mount("/content/drive")
-
+        co('''# =============================================================================
+# ONE self-contained cell. Nothing here can raise - every check is guarded, so
+# you always get a verdict plus a listing of what is actually in Drive.
+# =============================================================================
 DRIVE_ROOT = "/content/drive/MyDrive/DL2_InvoiceAI"    # <-- change if yours differs
+
+import sys, os, traceback
+from pathlib import Path
+
+try:
+    from google.colab import drive
+    drive.mount("/content/drive")
+except Exception as e:
+    print("[warn] Drive mount skipped/failed:", e)
+
 root = Path(DRIVE_ROOT)
-print("root exists:", root.exists(), "->", root)
-if root.exists():
-    for p in sorted(root.iterdir()):
-        print("   ", p.name + ("/" if p.is_dir() else ""))"""),
-        co("""# --- code/ : the repo snapshot the notebooks import from ---------------------
-OK, BAD = [], []
+OK, BAD, TIP = [], [], []
 
-def check(label, cond, detail=""):
+def check(label, cond, detail="", tip=""):
     (OK if cond else BAD).append(label)
-    print(f"  [{'OK ' if cond else 'FAIL'}] {label}{('  ' + detail) if detail else ''}")
+    if not cond and tip:
+        TIP.append(f"{label}: {tip}")
+    print(f"  [{'OK  ' if cond else 'FAIL'}] {label}" + (f"   {detail}" if detail else ""))
 
-print("code/")
+def listing(p, n=20):
+    try:
+        items = sorted(p.iterdir())
+        if not items:
+            return "    (folder is EMPTY)"
+        return "\\n".join(f"    {x.name}{'/' if x.is_dir() else ''}" for x in items[:n])
+    except Exception as ex:
+        return f"    (cannot list: {ex})"
+
+print("=" * 70)
+print("DRIVE ROOT")
+print("=" * 70)
+if not root.exists():
+    print(f"  [FAIL] {root} does not exist.")
+    print("  Either your folder has a different name, or Drive is not mounted.")
+    print("  Edit DRIVE_ROOT at the top of this cell and re-run.")
+    raise SystemExit
+print(f"  root: {root}")
+print(listing(root))
+
+# ---------------------------------------------------------------- code/
+print("\\n" + "=" * 70)
+print("code/   (the repo snapshot the notebooks import from)")
+print("=" * 70)
 code = root / "code"
-check("code/colab_bootstrap.py", (code/"colab_bootstrap.py").exists())
-check("code/src/compute_profile.py", (code/"src"/"compute_profile.py").exists())
-check("code/src/iou.py", (code/"src"/"iou.py").exists())
-n_src = len(list((code/"src").glob("*.py"))) if (code/"src").exists() else 0
-check("code/src/ has modules", n_src >= 10, f"{n_src} .py files")
-
-sys.path.insert(0, str(code))
-import colab_bootstrap as CB
-paths = CB.setup_paths(root)
-print("  bootstrap imported OK")"""),
-        co("""# --- inputs/ : manifest, invoice images, annotations -------------------------
-print("inputs/")
-import pandas as pd
-man_p = paths.inputs / "invoice_manifest.csv"
-check("inputs/invoice_manifest.csv", man_p.exists())
-if man_p.exists():
-    man = pd.read_csv(man_p)
-    check("  manifest has 750 rows", len(man) == 750, f"{len(man)} rows")
-    if "has_ground_truth" in man:
-        cov = man.has_ground_truth.mean()
-        check("  ground-truth coverage is 100%", cov > 0.99, f"{cov:.1%}")
-    imgs = list((paths.inputs/"images").glob("*.jpg"))
-    check("  inputs/images/ has 750 jpgs", len(imgs) == 750, f"{len(imgs)} files")
-    missing = [r.image_path for r in man.head(50).itertuples()
-               if not (root / r.image_path).exists()]
-    check("  manifest paths resolve", not missing,
-          f"{len(missing)} of first 50 missing" if missing else "sampled 50")
-
-ann = list((paths.inputs/"annotations").glob("batch1_*.csv"))
-check("inputs/annotations/batch1_*.csv", len(ann) == 3, f"{len(ann)} of 3")"""),
-        co("""# --- inputs/datasets/ : the three real datasets ------------------------------
-print("inputs/datasets/")
-DATA = paths.inputs / "datasets"
-
-def try_root(label, folder, markers):
-    try:
-        p = CB.resolve_dataset_root(DATA / folder, markers)
-        extra = "" if p == DATA/folder else f"  (nested deeper: .../{p.name} - handled)"
-        check(label, True, str(p.relative_to(DATA)) + extra)
-        return p
-    except FileNotFoundError as e:
-        check(label, False, str(e).splitlines()[0])
-        return None
-
-OCR = try_root("datasets/ocr_multitype", "ocr_multitype",
-               ["train/annotations", "val/annotations", "test/annotations"])
-SIG = try_root("datasets/signatures", "signatures", ["images", "image_ids.csv"])
-STA = try_root("datasets/stamps", "stamps", ["scans", "ground-truth-maps"])
-
-if OCR:
-    for sp, exp in [("train", 778), ("val", 97), ("test", 98)]:
-        ni = len(list((OCR/sp/"images").glob("*")))
-        na = len(list((OCR/sp/"annotations").glob("*.json")))
-        check(f"  ocr {sp}", ni == exp and na == exp, f"{ni} images / {na} json (expect {exp})")
-
-if SIG:
-    try:
-        d = CB.resolve_files_dir(SIG/"images", "*.png")
-        npng = len(list(d.glob("*.png")))
-        njpg = len(list(d.glob("*.jpeg"))) + len(list(d.glob("*.jpg")))
-        # SignverOD ships a mix: 2,694 .png + 71 .jpeg = 2,765
-        check("  signatures/images", npng + njpg >= 2700,
-              f"{npng} png + {njpg} jpeg = {npng+njpg} (expect 2,765)")
-    except FileNotFoundError as e:
-        check("  signatures/images", False, str(e).splitlines()[0])
-    for f in ["train.csv", "test.csv", "image_ids.csv", "categories.csv", "labelmap.txt"]:
-        check(f"  signatures/{f}", (SIG/f).exists())
-
-if STA:
-    for sub, pat, exp in [("scans", "*.png", 427), ("ground-truth-maps", "*.png", 400),
-                          ("info", "*.txt", 400)]:
-        try:
-            d = CB.resolve_files_dir(STA/sub, pat)
-            n = len(list(d.glob(pat)))
-            note = "" if d == STA/sub else f" (double-nested {sub}/{sub} - handled)"
-            check(f"  stamps/{sub}", n >= exp*0.9, f"{n} files (expect {exp}){note}")
-        except FileNotFoundError as e:
-            check(f"  stamps/{sub}", False, str(e).splitlines()[0])"""),
-        co("""# --- Verdict ------------------------------------------------------------------
-print("\\n" + "="*66)
-print(f"PASSED {len(OK)}   FAILED {len(BAD)}")
-print("="*66)
-if BAD:
-    print("\\nFix these before running a member notebook:\\n")
-    for b in BAD:
-        print("  -", b)
-    print("\\nSee inputs/datasets/COPY_MAP.md for the exact source -> destination mapping.")
-    print("A 'nested deeper' NOTE above is NOT a failure - it is handled automatically.")
+if not code.exists():
+    check("code/ exists", False, tip="create it and copy the repo's src/ + scripts/ into it")
 else:
-    print("\\nEverything checks out. Members can run their notebooks:")
-    print("  02 Diana   needs datasets/signatures + datasets/stamps")
-    print("  03 Jordan  needs datasets/ocr_multitype")
-    print("  04 Damir   needs datasets/ocr_multitype + inputs/annotations")
-    print("  05 Hessam  needs the others' published outputs (run last)")
-    print("  01 Rolando is OPTIONAL - the manifest was already built locally")"""),
+    print(listing(code))
+    check("code/colab_bootstrap.py", (code / "colab_bootstrap.py").exists(),
+          tip="copy repo colab/colab_bootstrap.py -> Drive code/colab_bootstrap.py")
+    check("code/src/compute_profile.py", (code / "src" / "compute_profile.py").exists(),
+          tip="copy repo src/*.py -> Drive code/src/")
+    check("code/src/iou.py", (code / "src" / "iou.py").exists(),
+          tip="copy repo src/*.py -> Drive code/src/")
+    n_src = len(list((code / "src").glob("*.py"))) if (code / "src").exists() else 0
+    check("code/src/ has modules", n_src >= 10, f"{n_src} .py files",
+          tip="copy ALL of repo src/*.py -> Drive code/src/")
+
+CB = paths = None
+if (code / "colab_bootstrap.py").exists():
+    try:
+        sys.path.insert(0, str(code))
+        import colab_bootstrap as CB
+        paths = CB.setup_paths(root)
+        check("import colab_bootstrap", True)
+    except Exception:
+        check("import colab_bootstrap", False, tip="see traceback below")
+        traceback.print_exc()
+
+# ---------------------------------------------------------------- inputs/
+print("\\n" + "=" * 70)
+print("inputs/   (manifest, invoice images, annotations)")
+print("=" * 70)
+inputs = root / "inputs"
+if not inputs.exists():
+    check("inputs/ exists", False, tip="upload the inputs/ folder from the staging bundle")
+else:
+    print(listing(inputs))
+    man_p = inputs / "invoice_manifest.csv"
+    check("inputs/invoice_manifest.csv", man_p.exists(),
+          tip="upload inputs/invoice_manifest.csv from the staging bundle")
+    if man_p.exists():
+        try:
+            import pandas as pd
+            man = pd.read_csv(man_p)
+            check("  manifest has 750 rows", len(man) == 750, f"{len(man)} rows")
+            if "has_ground_truth" in man.columns:
+                cov = float(man.has_ground_truth.mean())
+                check("  ground-truth coverage 100%", cov > 0.99, f"{cov:.1%}",
+                      tip="you may still have the OLD 26% manifest - re-upload inputs/")
+            else:
+                check("  manifest is the NEW annotation-aware one", False,
+                      "no has_ground_truth column",
+                      tip="this is the OLD manifest - re-upload inputs/ from the bundle")
+            imgs = list((inputs / "images").glob("*.jpg"))
+            check("  inputs/images/ has 750 jpgs", len(imgs) == 750, f"{len(imgs)} files",
+                  tip="delete inputs/images/ in Drive and re-upload it (the set changed)")
+            miss = [r.image_path for r in man.head(50).itertuples()
+                    if not (root / r.image_path).exists()]
+            check("  manifest paths resolve", not miss,
+                  f"{len(miss)}/50 missing" if miss else "sampled 50 OK",
+                  tip="images/ contents do not match the manifest - re-upload inputs/")
+        except Exception:
+            check("  manifest readable", False)
+            traceback.print_exc()
+    ann = list((inputs / "annotations").glob("batch1_*.csv"))
+    check("inputs/annotations/batch1_*.csv", len(ann) == 3, f"{len(ann)} of 3",
+          tip="copy the 3 batch1_*.csv into inputs/annotations/")
+
+# ---------------------------------------------------------------- datasets/
+print("\\n" + "=" * 70)
+print("inputs/datasets/   (the three real datasets)")
+print("=" * 70)
+DATA = inputs / "datasets"
+if not DATA.exists():
+    check("inputs/datasets/ exists", False,
+          tip="create it and copy the datasets in - see inputs/datasets/COPY_MAP.md")
+elif CB is None:
+    print("  (skipped - colab_bootstrap could not be imported, fix code/ first)")
+else:
+    print(listing(DATA))
+
+    def try_root(label, folder, markers, tip):
+        d = DATA / folder
+        if not d.exists():
+            check(label, False, "folder missing", tip=tip)
+            return None
+        try:
+            p = CB.resolve_dataset_root(d, markers)
+            note = "" if p == d else f"  (nested deeper: .../{p.name} - handled)"
+            check(label, True, f"{p.name}{note}")
+            return p
+        except FileNotFoundError as e:
+            check(label, False, str(e).splitlines()[0], tip=tip)
+            print(listing(d, 10))
+            return None
+
+    OCR = try_root("datasets/ocr_multitype", "ocr_multitype",
+                   ["train/annotations", "val/annotations", "test/annotations"],
+                   "needs train/ val/ test/, each with images/ and annotations/")
+    SIG = try_root("datasets/signatures", "signatures", ["images", "image_ids.csv"],
+                   "needs images/ plus the 5 loose csv/txt files at the folder root")
+    STA = try_root("datasets/stamps", "stamps", ["scans", "ground-truth-maps"],
+                   "needs scans/, ground-truth-maps/, info/")
+
+    if OCR:
+        for sp, exp in [("train", 778), ("val", 97), ("test", 98)]:
+            ni = len(list((OCR / sp / "images").glob("*"))) if (OCR/sp/"images").exists() else 0
+            na = len(list((OCR / sp / "annotations").glob("*.json"))) if (OCR/sp/"annotations").exists() else 0
+            check(f"  ocr {sp}", ni == exp and na == exp,
+                  f"{ni} images / {na} json (expect {exp})",
+                  tip=f"upload is incomplete for {sp} - recopy that folder")
+    if SIG:
+        try:
+            d = CB.resolve_files_dir(SIG / "images", "*.png")
+            npng = len(list(d.glob("*.png")))
+            njpg = len(list(d.glob("*.jpeg"))) + len(list(d.glob("*.jpg")))
+            check("  signatures/images", npng + njpg >= 2700,
+                  f"{npng} png + {njpg} jpeg = {npng + njpg} (expect 2,765)",
+                  tip="upload still running, or an incomplete copy")
+        except FileNotFoundError as e:
+            check("  signatures/images", False, str(e).splitlines()[0],
+                  tip="copy signatures/images/ contents in")
+        for f in ["train.csv", "test.csv", "image_ids.csv", "categories.csv", "labelmap.txt"]:
+            check(f"  signatures/{f}", (SIG / f).exists(),
+                  tip="this file goes LOOSE at the root of signatures/, not inside images/")
+    if STA:
+        for sub, pat, exp in [("scans", "*.png", 427), ("ground-truth-maps", "*.png", 400),
+                              ("info", "*.txt", 400)]:
+            d0 = STA / sub
+            if not d0.exists():
+                check(f"  stamps/{sub}", False, "folder missing",
+                      tip=f"copy StaVer/{sub}/{sub}/ CONTENTS into stamps/{sub}/")
+                continue
+            try:
+                d = CB.resolve_files_dir(d0, pat)
+                n = len(list(d.glob(pat)))
+                note = "" if d == d0 else f"  (double-nested - handled)"
+                check(f"  stamps/{sub}", n >= exp * 0.9, f"{n} files (expect {exp}){note}")
+            except FileNotFoundError as e:
+                check(f"  stamps/{sub}", False, str(e).splitlines()[0],
+                      tip=f"copy the INNER StaVer/{sub}/{sub}/ contents into stamps/{sub}/")
+
+# ---------------------------------------------------------------- verdict
+print("\\n" + "=" * 70)
+print(f"PASSED {len(OK)}    FAILED {len(BAD)}")
+print("=" * 70)
+if BAD:
+    print("\\nFIX THESE:\\n")
+    for t in TIP:
+        print("  -", t)
+    for b in BAD:
+        if not any(t.startswith(b) for t in TIP):
+            print("  -", b)
+    print("\\nSee inputs/datasets/COPY_MAP.md for exact source -> destination paths.")
+    print("A 'nested deeper - handled' note is NOT a failure.")
+else:
+    print("\\nAll clear. Run order:")
+    print("  02 Diana    datasets/signatures + datasets/stamps")
+    print("  03 Jordan   datasets/ocr_multitype")
+    print("  04 Damir    datasets/ocr_multitype + inputs/annotations")
+    print("  05 Hessam   the others' published outputs (run LAST)")
+    print("  01 Rolando  OPTIONAL - the manifest was already built locally")'''),
         md("""## If something failed
 
 | Symptom | Fix |
