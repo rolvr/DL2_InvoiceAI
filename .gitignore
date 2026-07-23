@@ -28,6 +28,8 @@ models/**/*.pth
 # ultralytics auto-downloads its base weights into the CWD; never track those
 yolov8*.pt
 yolo11*.pt
+# Drive-structure wrapper copies of member outputs (contents live at the flat paths above)
+outputs/*_outputs/
 models/**/*.h5
 models/**/*.onnx
 models/**/*.weights
