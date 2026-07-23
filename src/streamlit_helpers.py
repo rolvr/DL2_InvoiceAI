@@ -7,6 +7,7 @@ of Streamlit.
 """
 
 import json
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -73,3 +74,75 @@ def run_full_pipeline(
 def to_downloadable_json(result: dict[str, Any]) -> bytes:
     """Serialize a result dict to pretty-printed JSON bytes for st.download_button."""
     return json.dumps(result, indent=2, default=str).encode("utf-8")
+
+
+# ===========================================================================
+# Verdict signals — derive the 4 signal groups the verdict engine needs.
+#
+# Reality check (see the interface contract + the frozen member notebooks):
+#   * Diana's stamp/signature predictions ARE keyed to the 750 invoice document_ids.
+#   * Jordan's region predictions include invoice-keyed rows.
+#   * Damir's parameter/terms CSVs are keyed to the OCR-DATASET receipts, NOT the invoices, so
+#     they cannot be read directly for an invoice verdict. Instead we DERIVE the reference/date/
+#     payment-terms signals here, at integration time, by running the shared src/ text modules on
+#     whatever OCR text / annotation text we have for a given invoice.
+# Missing signals are returned as None so the verdict engine can fail-closed.
+# ===========================================================================
+def derive_reference_signals(text: str | None, extra_fields: list[dict] | None = None) -> dict | None:
+    """Which reference fields are present in `text`. Returns None if there is no text at all
+    (=> 'unknown' at verdict time), or a {field_name: bool} dict if text was available."""
+    if not text:
+        return None
+    from src.parameter_checker import check_all_fields
+
+    results = check_all_fields(text, extra_fields=extra_fields)
+    return {r["field_name"]: bool(r["present"]) for r in results}
+
+
+def derive_terms_signals(text: str | None) -> dict:
+    """Pull invoice_date + billing_due_days from free OCR/annotation text using Damir's shared
+    terms_extraction module. Values are None when not found (=> fail-closed)."""
+    out = {"invoice_date": None, "billing_due_days": None, "payment_terms": None}
+    if not text:
+        return out
+    from src.terms_extraction import extract_billing_due_days, extract_dates, extract_payment_terms
+
+    dates = extract_dates(text)
+    out["invoice_date"] = dates[0] if dates else None
+    out["billing_due_days"] = extract_billing_due_days(text)
+    out["payment_terms"] = extract_payment_terms(text)
+    return out
+
+
+def signals_from_record(record: dict[str, Any], ocr_text: str | None = None,
+                        extra_fields: list[dict] | None = None) -> dict[str, Any]:
+    """Build the verdict-engine signals dict from a per-invoice final-JSON `record`, optionally
+    enriched with raw `ocr_text` (for reference/date/terms derivation).
+
+    `record` follows model_interface_contract.md. `ocr_text` is the invoice's OCR text if we
+    have it (Damir's invoice_batch1 rows, or an annotation CSV's 'OCRed Text'); when absent, the
+    reference/date/terms signals are None so the verdict fails closed on those rules.
+    """
+    ve = record.get("visual_elements", {})
+    pc = record.get("payment_context", {})
+
+    terms = derive_terms_signals(ocr_text)
+    references = derive_reference_signals(ocr_text, extra_fields=extra_fields)
+
+    return {
+        "stamp_detected": ve.get("stamp_detected"),
+        "signature_detected": ve.get("signature_detected"),
+        "references": references,
+        # prefer a structured date already on the record, else the derived one
+        "invoice_date": pc.get("invoice_date") or terms["invoice_date"],
+        "billing_due_days": pc.get("billing_due_days") if pc.get("billing_due_days") is not None
+        else terms["billing_due_days"],
+    }
+
+
+def signals_from_pipeline_result(result: dict[str, Any], ocr_text: str | None = None,
+                                 extra_fields: list[dict] | None = None) -> dict[str, Any]:
+    """Same as signals_from_record but for a live `run_full_pipeline` result on an upload.
+    The combined OCR text from the pipeline (if any) drives reference/date/terms derivation."""
+    return signals_from_record(result, ocr_text=ocr_text, extra_fields=extra_fields)
+

@@ -26,24 +26,28 @@ structured field ground truth, a big upgrade for Damir); `data/raw/signatures/` 
 stratified sample, gitignored but persists on disk; also durably committed as the member-outputs
 mirror on `feature/rolando-data-ingestion`).
 
-## Current wave
+## Current wave (updated 2026-07-22 — execution model CHANGED, see below)
 
-| # | Member | Branch | Status | Deployed (session) | Outputs verified? | Notes |
+**Execution model as of 2026-07-22: members run their OWN Colab (GPU) notebooks** (`colab/notebooks/`)
+and publish to Google Drive; the human copies results into local `outputs/` for orchestrator
+verification. The old "local sequential Sonnet agents" model is retired (local machine is CPU-only).
+
+| # | Member | Colab notebook | Status | Results on local disk? | Verified? | Notes |
 |---|---|---|---|---|---|---|
-| 1 | Rolando (data ingestion) | feature/rolando-data-ingestion | ✅ **COMPLETE (REAL data)** | re-run 2026-07-21 17:41 EDT | ✅ yes (18:10) | **Real re-run committed 869c68b.** 750-img stratified manifest (unique batch-prefixed doc_ids e.g. `batch1-0011`, POSIX paths, 0 synthetic, split 524/120/106), real figures + QA report, report-log re-run section added (annotation-CSV schema documented). Note: agent returned before nbconvert finished; orchestrator verified outputs + did the finalize/commit (agent transcript not resumable). Earlier synthetic run = 2f64e7c (superseded). |
-| 2 | Diana (stamp/signature) | feature/diana-stamp-signature | ⚠️ complete on SYNTHETIC — **NEEDS REAL RE-RUN (next)** | 2026-07-21 16:22 EDT | prior run ✅ | Synthetic run committed 8da2511 (YOLOv8n, metrics stamp IoU 0.96 / sig IoU 0.87). **RE-RUN on real SignverOD (`data/raw/signatures/`) + StaVer (`data/raw/stamps/`) is the NEXT deploy.** See resume prompt in status_log.md. |
-| 3 | Jordan (region/IoU) | feature/jordan-region-iou | pending (after Diana real re-run — sequential) | — | — | Reads the 750-row REAL manifest. Region bboxes are NOT in the annotation CSVs (those are field-level JSON), so still needs a heuristic/synthetic region-box approach. |
-| 4 | Damir (OCR/terms) | feature/damir-ocr-terms | pending (blocked on #3) | — | — | Needs Jordan's region_predictions.csv (+ Diana's stamp/sig preds). |
-| 5 | Hessam (integration/Streamlit) | feature/hessam-integration-streamlit | pending (blocked on #1-4) | — | — | Runs last; integrates all outputs into final JSON + demo + report/deck assembly. |
+| 1 | Rolando (ingestion) | `01_..._colab.ipynb` | ✅ **DONE (real, annotation-aware)** | ✅ manifest | ✅ yes | 750-row manifest, **GT coverage 100%** (was 26.3%), split 525/120/105. His Colab notebook is OPTIONAL (manifest already built locally). |
+| 2 | Diana (stamp/signature) | `02_..._colab.ipynb` | 🔄 **RUNNING on Colab** | ❌ not yet | ❌ | Human will copy `stamp_signature_predictions.csv` + metrics into `outputs/`. ⚠️ the file at that path now is the OLD SYNTHETIC one (2026-07-21) — must be overwritten. |
+| 3 | Jordan (region/IoU) | `03_..._colab.ipynb` | 🔄 **RUNNING on Colab** | ❌ not yet | ❌ | Now uses the OCR Dataset (real 52,331 boxes), labels company/date/address/total/other_text; invoice-keyed rows via `source="invoice"`. |
+| 4 | Damir (OCR/params/terms) | `04_..._colab.ipynb` | ✅ **DONE on Colab (human-reported)** | ❌ **NOT copied down yet** | ❌ **NOT verified** | Files absent from local `outputs/`, member mirrors, and the Drive upload folder as of this check. Human copies into `outputs/` for verification once #2 and #3 also finish. NB: his param/terms CSVs are RECEIPT-keyed — invoice verdict signals are derived at integration (see status_log + plan). |
+| 5 | Hessam (integration/Streamlit) | — (local) | 🔶 **App PARTIALLY BUILT, NOT verified** | code in tree, uncommitted | ❌ | `src/verdict_engine.py` (9/9 tests pass) + results_store/policy_store/streamlit_helpers/app written but app NOT launched; report/demo/sample-invoices pending. Full design: `ai_cowork/plans/streamlit_app_verdict_engine_plan.md`. |
 
-**Execution model (important):** agents run **SEQUENTIALLY**, one at a time, in the single shared
-working tree — NOT in parallel. Concurrent agents would corrupt git state (shared index/checkouts),
-and git-worktree isolation would hide the gitignored synthetic data (manifest + images) they depend
-on. Gitignored data persists on disk across branch checkouts, so a sequential agent on any branch
-sees it. Orchestrator home branch = `main`; the infra + report-log stubs were committed to `main`
-and merged into `dev` + all feature branches so checkouts don't remove them. Each agent commits
-ONLY its own files to its feature branch (scoped, no `git add -A`); orchestrator merges each
-feature branch → `dev` at integration time.
+### Streamlit app build — detailed status (2026-07-22)
+DONE + verified: `src/verdict_engine.py` (rule engine; **9/9 unit tests** in `tests/test_verdict_engine.py`).
+DONE, imports clean, NOT run: `src/results_store.py`, `src/policy_store.py`, `src/streamlit_helpers.py`
+(signal derivation), `app/streamlit_app.py` (3 views + sidebar policy builder),
+`config/required_fields_config.json` (+ Work Order No.), `config/verdict_policies.json` (created on save).
+NOT verified: app never launched. NOT done: per-invoice HTML report, `presentation/demo_script.md`
+update, `app/sample_invoices/`, live-inference test (needs `best.pt` in `models/`).
+NOT committed: all app-build files uncommitted on `main`.
 
 ## Report log deliverable (every member — feeds the report & slide deck)
 

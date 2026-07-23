@@ -121,6 +121,59 @@ filesystem (see `../ORCHESTRATION.md`).
   branch member-outputs mirror. Logs updated. Diana's synthetic run parked on its branch.
 - **NEXT ACTION ON RESUME → re-run Diana on REAL data.** Use the resume prompt below.
 
+### 2026-07-22 — MAJOR PIVOT: local agents → member-run Colab; + Streamlit app build
+Big changes this session (the 07-21 resume prompt below is now SUPERSEDED — do not follow it):
+
+**1. Abandoned local CPU agent runs; members run their own Colab (GPU) notebooks.** Local machine
+is CPU-only; Diana's local re-run was aborted mid-training. Built a `colab/` delivery surface:
+`colab/notebooks/00_preflight + 01..05_<member>_colab.ipynb`, `colab/colab_bootstrap.py`
+(mount/paths/deps/verify/publish, tolerant path resolvers), `src/compute_profile.py`
+(local_cpu vs colab_gpu), `colab/bundle/` generators. Notebooks read datasets from Google Drive
+(no Kaggle token shared). Committed: a67fa99, 6868571, b0334bf, 94a2c1d, e495aa6.
+
+**2. Dataset discoveries (see `ai_cowork/plans/` + git log):**
+- `data/raw/invoices/OCR Dataset of Multi-type Documents/` = SROIE-style receipts: 973 imgs,
+  **100% annotation, 52,331 real polygon boxes + entities**. Jordan + Damir now use THIS (real
+  boxes) instead of the heuristic plan.
+- Batch annotation CSVs exist ONLY for batch_1 (1,413 imgs). Rolando resampled **annotation-aware**
+  → manifest GT coverage 26.3% → **100%** (750 rows, split 525/120/105). `batch_3/` duplicates
+  batches 1-2 (true unique = 5,201, not 8,181) — excluded to avoid leakage.
+- Drive bundle staged at `C:\Users\hessa\DL2_InvoiceAI_upload` (~147 MB) + datasets copied in by
+  the human; preflight passed 26/0/1 (1 warning = stale extra images, harmless).
+
+**3. Streamlit app final phase — DESIGNED + PARTIALLY BUILT (NOT VERIFIED).**
+Full design in `ai_cowork/plans/streamlit_app_verdict_engine_plan.md`. Core reframing: the
+ready/not-ready verdict is a **user-configurable rule engine** (visual mark / reference no. /
+invoice-date range / payment-terms days; per-rule toggle; all enabled AND-ed; **fail-closed** on
+missing signals). Scope: single invoice + whole batch. Execution: hybrid (gallery reads
+pre-computed; upload runs live models if weights in `models/`).
+- Built + tested: `src/verdict_engine.py` (**9/9 unit tests pass**, `tests/test_verdict_engine.py`).
+- Built, imports clean, NOT run: `src/results_store.py`, `src/policy_store.py`,
+  `src/streamlit_helpers.py` (signal derivation), `app/streamlit_app.py` (3-view app),
+  `config/required_fields_config.json` (+ Work Order No.).
+- **NOT verified: the app has never been launched.** **NOT done:** per-invoice HTML report,
+  `presentation/demo_script.md` update, `app/sample_invoices/`, live-inference test (no weights yet).
+- **NOT committed:** all app-build files are uncommitted in the working tree on `main`.
+- Key correctness note baked into the app: Damir's `parameter_presence_results.csv` /
+  `terms_extraction_results.csv` are keyed to the OCR-DATASET RECEIPTS, not the 750 invoices, so
+  reference/date/terms signals are DERIVED at integration from invoice OCR text + batch_1
+  annotation `OCRed Text` (`src/results_store.invoice_ocr_text` + `src/streamlit_helpers`).
+
+**4. Member notebook status (human-reported, 2026-07-22):**
+- **Damir (04): DONE on Colab, NOT verified.** His result files are NOT yet on local disk (checked
+  `outputs/`, member mirrors, and the Drive upload folder — absent). Human will copy them into
+  `outputs/` for verification once the other two finish.
+- **Diana (02) + Jordan (03): still running on Colab.** Human will copy all three members' results
+  into `outputs/predictions|metrics/` together, then orchestrator verifies.
+- ⚠️ `outputs/predictions/stamp_signature_predictions.csv` on disk right now is the OLD SYNTHETIC
+  file (2026-07-21 17:19) — it MUST be overwritten by Diana's real Colab output before trusting it.
+
+- **NEXT ACTIONS:** (a) when Diana+Jordan finish, human copies all outputs into `outputs/` →
+  orchestrator verifies each against `model_interface_contract.md`; (b) launch the Streamlit app
+  headless and fix runtime issues; (c) finish report/demo-script/sample-invoices; (d) copy trained
+  `best.pt` weights from Drive into `models/` to enable live vision on uploads; (e) commit the app
+  build.
+
 ---
 
 ## ▶️ RESUME PROMPT (paste to the next session after reset)

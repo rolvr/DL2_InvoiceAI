@@ -19,6 +19,12 @@
       "patterns": ["CN[-\\s]?[0-9A-Z]+"]
     },
     {
+      "field_name": "Work Order No.",
+      "required": false,
+      "keywords": ["work order", "work order no", "wo no", "w/o", "job no", "job order"],
+      "patterns": ["WO[-\\s]?[0-9A-Z]+", "JOB[-\\s]?[0-9A-Z]+"]
+    },
+    {
       "field_name": "Project Reference",
       "required": false,
       "keywords": ["project ref", "project number", "project code"],
