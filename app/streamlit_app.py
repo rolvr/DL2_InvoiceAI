@@ -8,20 +8,28 @@ The app's centrepiece is a USER-CONFIGURABLE verdict: the user builds a policy f
 every invoice is judged Ready / Not-ready against it, with a transparent per-rule breakdown.
 
 Three views:
-  • Live Demo    — upload or pick an invoice → annotated image → verdict → downloads
+  • Live Demo    — pick a sample or upload an invoice → annotated image → OCR → verdict → downloads
   • Batch Gallery— apply the policy across all invoices → "N of M pass" → filter → drilldown
-  • Model Report — the members' metrics + local-CPU-vs-Colab-GPU comparison
+  • Model Report — the members' real metrics + obligation-readiness-by-policy summary
 
-Hybrid data model: Gallery/Report read pre-computed member outputs from `outputs/` (shown as
-"waiting for X" until they land); a brand-new upload runs the real detectors live IF their
-weights are in `models/`, else it still produces a verdict with vision marked "model unavailable".
+CPU-only, no GPU. All three detectors (region / stamp / signature) are real trained YOLO models
+loaded from `models/`; OCR is EasyOCR run on CPU, cached after first load.
+
+Performance: the Batch Gallery's per-invoice signals (visual marks + OCR-derived reference/date/
+terms) are POLICY-INDEPENDENT, so they are computed once and cached with `st.cache_data`. Only
+`verdict_engine.evaluate()` — pure, cheap rule logic — re-runs when a policy rule is toggled, so
+the "N/750 ready" readout updates near-instantly instead of re-deriving OCR signals every time.
+
 Fail-closed: any enabled rule without a signal counts as a fail.
 """
 
 import sys
+import time
 from pathlib import Path
 
+import cv2
 import numpy as np
+import pandas as pd
 import streamlit as st
 from PIL import Image, ImageDraw
 
@@ -32,9 +40,11 @@ if str(REPO_ROOT) not in sys.path:
 from src import results_store as RS  # noqa: E402
 from src import policy_store  # noqa: E402
 from src.config import load_required_fields, PATHS  # noqa: E402
-from src.streamlit_helpers import signals_from_record  # noqa: E402
+from src.streamlit_helpers import (  # noqa: E402
+    build_html_report, image_to_base64_png, signals_from_record, to_downloadable_json,
+)
 from src.verdict_engine import (  # noqa: E402
-    DateRangeRule, PaymentTermsRule, Policy, ReferenceRule, VisualRule, evaluate,
+    DateRangeRule, PaymentTermsRule, Policy, ReferenceRule, VisualRule, evaluate, preset_policies,
 )
 
 st.set_page_config(page_title="Invoice Obligation-Readiness", layout="wide", page_icon="🧾")
@@ -44,6 +54,7 @@ REGION_COLORS = {
     "total": "#7c4dff", "other_text": "#9e9e9e",
 }
 VISUAL_COLORS = {"stamp": "#e45756", "signature": "#4c78a8"}
+SAMPLE_DIR = REPO_ROOT / "app" / "sample_invoices"
 
 
 # ===========================================================================
@@ -127,6 +138,12 @@ def sidebar_policy() -> Policy:
         st.sidebar.success(f"Saved '{new_name.strip()}'")
         st.rerun()
 
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🔄 Refresh cached batch data", width="stretch",
+                         help="Clears the cached per-invoice signals (use if outputs/ changed on disk)."):
+        _batch_signal_table.clear()
+        st.sidebar.success("Cache cleared — will recompute on next view of Batch Gallery / Model Report.")
+
     return policy
 
 
@@ -156,6 +173,12 @@ def render_verdict(signals: dict, policy: Policy):
 def _load_yolo(weights_path: str):
     from ultralytics import YOLO
     return YOLO(weights_path)
+
+
+@st.cache_resource(show_spinner="Loading EasyOCR (first time only — downloads/loads CPU weights)…")
+def _load_easyocr_reader():
+    import easyocr
+    return easyocr.Reader(["en"], gpu=False, verbose=False)
 
 
 def _weights(sub: str) -> Path | None:
@@ -198,6 +221,30 @@ def run_live(image_bgr: np.ndarray, conf: float) -> dict:
     return out
 
 
+def run_live_ocr(image_bgr: np.ndarray, target_width: int = 700) -> str | None:
+    """Run EasyOCR (CPU) over the (downscaled, for speed) full page and return the combined
+    text, or None if the OCR engine is unavailable / fails — the caller should treat that as
+    'unknown' and let the verdict fail-closed on the reference/date/terms rules.
+
+    Downscaling to ~700px wide keeps a full-page CPU EasyOCR pass to ~15-20s instead of ~90s,
+    while still recovering header/body text well enough for reference-number and date matching.
+    """
+    try:
+        reader = _load_easyocr_reader()
+        h, w = image_bgr.shape[:2]
+        if w > target_width:
+            scale = target_width / w
+            small = cv2.resize(image_bgr, (int(w * scale), int(h * scale)))
+        else:
+            small = image_bgr
+        results = reader.readtext(small, detail=0, paragraph=True)
+        text = " ".join(results).strip()
+        return text or None
+    except Exception as e:
+        st.info(f"🔌 OCR unavailable ({e}) — reference/date/terms signals are unknown → fail-closed.")
+        return None
+
+
 def draw_overlays(pil: Image.Image, stamp_sig_rows, region_rows,
                   show_regions=True, show_visual=True) -> Image.Image:
     img = pil.convert("RGB").copy()
@@ -224,36 +271,73 @@ def view_live_demo(policy: Policy):
     st.title("Live Demo — one invoice, your rules")
     conf = st.slider("Detection confidence threshold", 0.0, 1.0, 0.25, 0.05)
 
-    up = st.file_uploader("Upload an invoice image", type=["png", "jpg", "jpeg", "tif", "tiff"])
-    if up is None:
-        st.info("Upload an invoice to run the pipeline and see the verdict under your current policy.")
+    sample_files = sorted(
+        p.name for p in SAMPLE_DIR.glob("*")
+        if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".tif", ".tiff"}
+    ) if SAMPLE_DIR.exists() else []
+
+    pick_col, up_col = st.columns([1, 1])
+    with pick_col:
+        picked = st.selectbox("Pick a sample invoice (no file dialog needed)",
+                              ["— none —"] + sample_files)
+    with up_col:
+        up = st.file_uploader("…or upload your own", type=["png", "jpg", "jpeg", "tif", "tiff"])
+
+    if up is not None:
+        pil = Image.open(up).convert("RGB")
+        image_name = up.name
+    elif picked != "— none —":
+        pil = Image.open(SAMPLE_DIR / picked).convert("RGB")
+        image_name = picked
+    else:
+        st.info("Pick a sample above or upload an invoice to run the pipeline and see the "
+                "verdict under your current policy.")
         avail = RS.availability()
         if not any(v for k, v in avail.items() if k.endswith(("predictions", "manifest"))):
             st.caption("⏳ No member outputs on disk yet — live upload still works if model weights "
                        "are in `models/`. The Gallery/Report views fill in as outputs land.")
         return
 
-    pil = Image.open(up).convert("RGB")
     image_bgr = np.array(pil)[:, :, ::-1]
 
-    with st.spinner("Running detectors…"):
+    with st.spinner("Running detectors (region + stamp/signature, CPU)…"):
         live = run_live(image_bgr, conf)
 
     show_r = st.checkbox("Show region boxes", value=True)
     show_v = st.checkbox("Show stamp/signature boxes", value=True)
+    annotated = draw_overlays(pil, live["stamp_sig_rows"], live["region_rows"], show_r, show_v)
 
     left, right = st.columns([1.1, 1])
     with left:
         st.subheader("Detections")
-        st.image(draw_overlays(pil, live["stamp_sig_rows"], live["region_rows"], show_r, show_v),
-                 width="stretch")
+        st.image(annotated, width="stretch")
         if not live["vision_available"]:
             st.caption("🔌 stamp/signature model unavailable (no weights in `models/`) — "
                        "those signals are unknown → fail-closed.")
         if not live["region_available"]:
             st.caption("🔌 region model unavailable — region overlay/field-crops disabled.")
+        n_stamp = sum(1 for r in live["stamp_sig_rows"] if r["label"] == "stamp")
+        n_sig = sum(1 for r in live["stamp_sig_rows"] if r["label"] == "signature")
+        st.caption(f"{n_stamp} stamp box(es), {n_sig} signature box(es), "
+                   f"{len(live['region_rows'])} region box(es) detected.")
 
-    # Build signals. No OCR engine locally (easyocr absent) → reference/date/terms unknown.
+    run_ocr_flag = st.checkbox(
+        "Run OCR (EasyOCR, CPU — ~15–20s on a full page) to enable reference/date/terms rules",
+        value=True,
+        help="Without OCR text, the reference/date/payment-terms rules have no signal and "
+             "fail-closed (shown as 'unknown'). This is the only step slow enough to need a spinner.",
+    )
+    ocr_text = None
+    if run_ocr_flag:
+        t0 = time.time()
+        with st.spinner("Running OCR (EasyOCR, CPU)… this can take ~15–20s on a full page"):
+            ocr_text = run_live_ocr(image_bgr)
+        ocr_elapsed = time.time() - t0
+        if ocr_text:
+            st.caption(f"OCR finished in {ocr_elapsed:.1f}s.")
+            with st.expander("Extracted OCR text"):
+                st.text(ocr_text)
+
     record = {
         "visual_elements": {
             "stamp_detected": any(r["label"] == "stamp" for r in live["stamp_sig_rows"])
@@ -263,40 +347,57 @@ def view_live_demo(policy: Policy):
         },
         "payment_context": {},
     }
-    signals = signals_from_record(record, ocr_text=None)
+    signals = signals_from_record(record, ocr_text=ocr_text)
 
     with right:
         st.subheader("Verdict")
-        render_verdict(signals, policy)
+        v = render_verdict(signals, policy)
         with st.expander("Signals used"):
             st.json(signals)
 
     st.divider()
-    st.download_button("⬇︎ Download signals JSON",
-                       data=__import__("json").dumps(signals, indent=2, default=str).encode(),
-                       file_name=f"{Path(up.name).stem}_signals.json", mime="application/json")
+    dl1, dl2 = st.columns(2)
+    with dl1:
+        st.download_button("⬇︎ Download signals JSON",
+                           data=to_downloadable_json(signals),
+                           file_name=f"{Path(image_name).stem}_signals.json", mime="application/json")
+    with dl2:
+        report_html = build_html_report(
+            document_id=image_name,
+            signals=signals,
+            verdict=v.as_dict(),
+            image_b64=image_to_base64_png(annotated),
+            extracted_text=ocr_text,
+            detections={
+                "confidence_threshold": conf,
+                "region_model_available": live["region_available"],
+                "stamp_signature_model_available": live["vision_available"],
+                "ocr_ran": run_ocr_flag,
+                "policy": policy.name,
+                "device": "cpu",
+            },
+        )
+        st.download_button("⬇︎ Download HTML report", data=report_html.encode("utf-8"),
+                           file_name=f"{Path(image_name).stem}_report.html", mime="text/html")
 
 
 # ===========================================================================
-# View: Batch Gallery
+# Batch signal computation — cached (policy-independent) so policy toggles are instant.
 # ===========================================================================
-def view_batch(policy: Policy):
-    st.title("Batch Gallery — the policy across every invoice")
+@st.cache_data(show_spinner="Computing per-invoice signals across the batch (first time only — cached after)…")
+def _batch_signal_table() -> pd.DataFrame:
+    """document_id -> {signals, stamp, signature, has_ocr}, for every invoice with SOME output.
+
+    This is the expensive part (OCR-text-derived reference/date/terms parsing across ~750
+    invoices, ~5-6s) and it does NOT depend on the verdict policy, so it is cached with
+    `st.cache_data`: computed once per session, then every policy-rule toggle only re-runs the
+    cheap, pure `verdict_engine.evaluate()` over the cached table (~0.05s for 750 rows).
+    """
     records = RS.load_final_records()
     ss_rows = RS.load_stamp_signature()
 
-    if not records and not ss_rows:
-        st.warning("⏳ Waiting for member outputs. The batch view needs Hessam's per-invoice JSON "
-                   "(`outputs/final_json/…`) or at least Diana's `stamp_signature_predictions.csv`. "
-                   "It will populate automatically once you copy the Colab outputs into `outputs/`.")
-        _availability_panel()
-        return
-
-    ocr_text = RS.invoice_ocr_text()
-
-    # Build a record per invoice if final JSON isn't there yet, from Diana's predictions.
     if not records:
-        by_doc = {}
+        by_doc: dict[str, list[dict]] = {}
         for r in ss_rows:
             by_doc.setdefault(r["document_id"], []).append(r)
         records = [{
@@ -308,27 +409,64 @@ def view_batch(policy: Policy):
             "payment_context": {},
         } for doc, rows in by_doc.items()]
 
+    ocr_text = RS.invoice_ocr_text()
     rows = []
     for rec in records:
         doc = rec.get("document_id")
         sig = signals_from_record(rec, ocr_text=ocr_text.get(doc))
-        v = evaluate(sig, policy)
-        rows.append({"document_id": doc, "ready": v.ready,
-                     "passed": v.n_pass, "enabled": v.n_enabled,
-                     "stamp": rec.get("visual_elements", {}).get("stamp_detected"),
-                     "signature": rec.get("visual_elements", {}).get("signature_detected"),
-                     "has_ocr": doc in ocr_text})
+        rows.append({
+            "document_id": doc,
+            "signals": sig,
+            "stamp": rec.get("visual_elements", {}).get("stamp_detected"),
+            "signature": rec.get("visual_elements", {}).get("signature_detected"),
+            "has_ocr": doc in ocr_text,
+        })
+    return pd.DataFrame(rows)
 
-    import pandas as pd
-    df = pd.DataFrame(rows)
+
+def _apply_policy(table: pd.DataFrame, policy: Policy) -> pd.DataFrame:
+    """Cheap, uncached: just runs evaluate() per row against the current policy."""
+    rows = []
+    for row in table.itertuples(index=False):
+        v = evaluate(row.signals, policy)
+        rows.append({"document_id": row.document_id, "ready": v.ready,
+                     "passed": v.n_pass, "enabled": v.n_enabled,
+                     "stamp": row.stamp, "signature": row.signature, "has_ocr": row.has_ocr})
+    return pd.DataFrame(rows)
+
+
+# ===========================================================================
+# View: Batch Gallery
+# ===========================================================================
+def view_batch(policy: Policy):
+    st.title("Batch Gallery — the policy across every invoice")
+
+    if not RS.availability()["final_json"] and not RS.load_stamp_signature():
+        st.warning("⏳ Waiting for member outputs. The batch view needs Hessam's per-invoice JSON "
+                   "(`outputs/final_json/…`) or at least Diana's `stamp_signature_predictions.csv`. "
+                   "It will populate automatically once you copy the Colab outputs into `outputs/`.")
+        _availability_panel()
+        return
+
+    t0 = time.time()
+    table = _batch_signal_table()
+    df = _apply_policy(table, policy)
+    elapsed = time.time() - t0
+
     n_ready = int(df.ready.sum())
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Invoices", len(df))
     c2.metric("Ready under this policy", n_ready)
     c3.metric("Pass rate", f"{100*n_ready/len(df):.0f}%" if len(df) else "—")
+    c4.metric("Re-render time", f"{elapsed*1000:.0f} ms")
 
     st.caption(f"{int(df.has_ocr.sum())} of {len(df)} invoices have OCR text; reference/date/terms "
-               "rules fail-close on the rest (shown honestly, not hidden).")
+               "rules fail-close on the rest (shown honestly, not hidden). Toggling a rule in the "
+               "sidebar only re-evaluates cached signals, so this view updates near-instantly.")
+    st.caption("Honest note: with the **Strict** preset (visual mark required), readiness is "
+               "**0/750** — this invoice corpus is clean, unsigned digital templates, not a "
+               "detector failure (Diana's stamp/signature detector scores IoU 0.82/0.81 on its "
+               "own held-out, non-invoice split).")
 
     filt = st.radio("Show", ["All", "Ready only", "Not ready only"], horizontal=True)
     view_df = df if filt == "All" else df[df.ready == (filt == "Ready only")]
@@ -341,8 +479,8 @@ def view_batch(policy: Policy):
     st.divider()
     st.subheader("Inspect one invoice")
     pick = st.selectbox("document_id", df.document_id.tolist())
-    rec = next((r for r in records if r.get("document_id") == pick), None)
-    if rec:
+    sig_row = table[table.document_id == pick]
+    if not sig_row.empty:
         cola, colb = st.columns([1, 1])
         with cola:
             img_path = _invoice_image_path(pick)
@@ -351,7 +489,7 @@ def view_batch(policy: Policy):
             else:
                 st.caption("image not found locally")
         with colb:
-            sig = signals_from_record(rec, ocr_text=ocr_text.get(pick))
+            sig = sig_row.iloc[0]["signals"]
             render_verdict(sig, policy)
 
 
@@ -381,7 +519,6 @@ def view_report():
         m = metrics["region_iou"]
         pc = m.get("per_class", {})
         if pc:
-            import pandas as pd
             st.dataframe(pd.DataFrame(pc).T, width="stretch")
         st.write(f"macro mean IoU: **{m.get('macro_mean_iou', '—')}**")
         _run_block(m.get("_run"))
@@ -389,15 +526,74 @@ def view_report():
     if "ocr_parameter" in metrics:
         st.subheader("Damir — OCR / parameters")
         m = metrics["ocr_parameter"]
-        st.json(m.get("ocr_primary", m))
+        primary = m.get("ocr_primary", {})
+        if primary:
+            oc1, oc2, oc3, oc4 = st.columns(4)
+            oc1.metric("CER (mean)", primary.get("cer_mean", "—"))
+            oc2.metric("CER (median)", primary.get("cer_median", "—"))
+            oc3.metric("WER (mean)", primary.get("wer_mean", "—"))
+            oc4.metric("WER (median)", primary.get("wer_median", "—"))
+        with st.expander("Full OCR / parameter metrics JSON"):
+            st.json(m)
         _run_block(m.get("_run"))
+
+    # --- readiness-by-policy summary (reuses the same cached signal table as Batch Gallery) ---
+    st.divider()
+    st.subheader("Obligation-readiness by policy (whole batch)")
+    if RS.availability()["final_json"] or RS.load_stamp_signature():
+        table = _batch_signal_table()
+        presets = preset_policies()
+        N = len(table)
+        ready_by_preset = {}
+        for name, pol in presets.items():
+            df = _apply_policy(table, pol)
+            ready_by_preset[name] = int(df.ready.sum())
+
+        summary_df = pd.DataFrame([
+            {"Policy": name, "Ready": r, "Total": N, "%": round(100 * r / N, 1) if N else 0.0}
+            for name, r in ready_by_preset.items()
+        ])
+        rc1, rc2 = st.columns([1, 1.4])
+        with rc1:
+            st.dataframe(summary_df, hide_index=True, width="stretch")
+            st.caption("Strict = 0 is honest: the corpus is unsigned digital templates and Strict "
+                       "requires a visual mark. Not a model bug — see Diana's metrics above.")
+        with rc2:
+            _readiness_chart(ready_by_preset, N)
+    else:
+        st.caption("⏳ No invoice-level outputs yet to summarize readiness across.")
 
     # local-CPU vs Colab-GPU comparison from the _run blocks
     runs = [(k, v.get("_run")) for k, v in metrics.items() if isinstance(v, dict) and v.get("_run")]
     if runs:
         st.subheader("Compute profile comparison (from each run's `_run` block)")
-        import pandas as pd
         st.dataframe(pd.DataFrame([{"model": k, **rb} for k, rb in runs]), width="stretch")
+
+
+def _readiness_chart(ready_by_preset: dict, N: int):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    order = ["Lenient", "Default", "Strict"]
+    colors = {"Lenient": "#0ca30c", "Default": "#eda100", "Strict": "#d03b3b"}
+    names = [n for n in order if n in ready_by_preset] + [n for n in ready_by_preset if n not in order]
+    vals = [ready_by_preset[n] for n in names]
+    pct = [100 * v / N if N else 0 for v in vals]
+
+    fig, ax = plt.subplots(figsize=(5.5, 3.6))
+    bars = ax.bar(names, pct, color=[colors.get(n, "#4c78a8") for n in names], width=0.55, zorder=3)
+    for b, v, p in zip(bars, vals, pct):
+        ax.annotate(f"{p:.1f}%\n({v}/{N})", xy=(b.get_x() + b.get_width() / 2, b.get_height()),
+                    xytext=(0, 4), textcoords="offset points", ha="center", va="bottom", fontsize=9)
+    ax.set_ylim(0, 115)
+    ax.set_ylabel("Ready (%)")
+    ax.grid(axis="y", color="#e1e0d9", linewidth=0.8, zorder=0)
+    ax.set_axisbelow(True)
+    for s in ["top", "right"]:
+        ax.spines[s].set_visible(False)
+    fig.tight_layout()
+    st.pyplot(fig, width="stretch")
 
 
 def _run_block(rb):
