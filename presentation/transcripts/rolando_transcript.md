@@ -43,7 +43,8 @@ noticing. I excluded the duplicates from sampling entirely.
 Finally, I stratify the train/val/test split by ground-truth availability, so every split stays
 fully labelled, not just the training set.
 
-[SHOW: `outputs/reports/data_quality_report.md` and the sample-invoice grid figure]
+[SHOW: presentation/images/sample_invoice_grid.png]
+[SHOW: presentation/images/preprocessing_examples.png]
 
 That's the manifest. Garbage in, garbage out — and I made sure what goes in is clean.
 

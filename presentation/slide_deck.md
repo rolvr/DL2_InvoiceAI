@@ -133,13 +133,20 @@ trickiest engineering piece of this notebook — know it cold for questions. -->
 
 | Class | Precision | Recall | Mean IoU |
 |---|---|---|---|
-| stamp | ⟪TBD⟫ | ⟪TBD⟫ | ⟪TBD⟫ |
-| signature | ⟪TBD⟫ | ⟪TBD⟫ | ⟪TBD⟫ |
+| stamp | 0.903 | 0.875 | 0.822 |
+| signature | 0.894 | 0.638 | 0.815 |
+
+Invoice inference: **0 of 750 invoices** have any stamp/signature detection — this corpus is
+clean, unsigned digital templates. A real, disclosed domain-gap result, not a model failure.
+
+![height:280px](images/stamp_signature_detection_examples.png)
 
 <!-- speaker notes:
 Report per-class, never a blended score — a "must be signed" business rule cares about the
-signature number specifically. Numbers land once the Colab run finishes; full detail in
-outputs/metrics/stamp_signature_metrics.json. -->
+signature number specifically. These are the final numbers from
+outputs/metrics/stamp_signature_metrics.json. Signature recall (0.638) is lower than precision
+(0.894) — worth naming out loud: the model is conservative, it misses some real signatures
+(382 false negatives) rather than over-calling them. -->
 
 ---
 
@@ -168,12 +175,23 @@ mislabel — near-duplicate text, partial substrings. -->
 
 | Class | Precision | Recall | Mean IoU |
 |---|---|---|---|
-| company / date / address / total / other_text | ⟪TBD⟫ | ⟪TBD⟫ | ⟪TBD⟫ |
-| **Macro mean IoU** | — | — | ⟪TBD⟫ |
+| company | 0.897 | 0.819 | 0.894 |
+| date | 0.756 | 0.855 | 0.812 |
+| address | 0.880 | 0.883 | 0.896 |
+| total | 0.763 | 0.783 | 0.887 |
+| other_text | 0.911 | 0.967 | 0.877 |
+| **Macro mean IoU** | — | — | **0.873** |
+
+Invoice inference: **750 of 750 invoices** carry at least one region detection — unlike Diana's
+visual marks, business-text regions transfer well across the receipt→invoice domain shift.
+
+![height:280px](images/region_detection_examples.png)
 
 <!-- speaker notes:
 Jordan's date/total/company boxes get a second life in the app: crop + OCR just that region to
-localize and read key fields — this feeds the verdict engine's date rule. -->
+localize and read key fields — this feeds the verdict engine's date rule. `date` has the lowest
+precision (0.756) of the four named classes — worth being ready to explain: dates are short,
+numeric, and easy to confuse with other short numeric text on a receipt. -->
 
 ---
 
@@ -254,6 +272,25 @@ default, and we show it transparently in the breakdown rather than hiding the "u
 
 ---
 
+# The Readiness Spread — Same 750 Invoices, Three Policies
+
+![height:430px](images/readiness_by_policy.png)
+
+- **Lenient** (no visual-mark requirement): **750 / 750 (100%)** ready
+- **Default** (reference number + date, no visual-mark requirement): **475 / 750 (63.3%)** ready
+- **Strict** (requires stamp AND signature): **0 / 750 (0%)** ready
+- The spread itself is the demo: one configurable engine, three honest outcomes on the same data
+
+<!-- speaker notes:
+This chart is the single clearest proof that the verdict engine is a real, working, configurable
+system and not a fixed script — same 750 invoices, same underlying signals, three different
+answers depending on the policy toggled. Strict landing at exactly 0% is not a bug: this corpus
+is unsigned digital templates, Diana's detector correctly finds 0/750 stamps or signatures on it,
+and a policy that requires a visual mark will fail-closed on all of them. That is the fail-closed
+design working as intended, and we say so directly rather than hiding a 0% number. -->
+
+---
+
 # Live Demo — the Streamlit App
 
 - **Live Demo** — upload or pick one invoice → annotated boxes → verdict card with per-rule
@@ -272,20 +309,21 @@ instead of just a claim. -->
 
 # Results
 
-*Diana and Jordan's Colab GPU runs, and independent verification of Damir's run, were still in
-progress at report time — every cell below is a placeholder, not a guess.*
+*All numbers below are final — read directly from each member's completed Colab GPU run
+(`outputs/metrics/*.json`) and the integration report. Nothing here is estimated.*
 
 | Stage | Headline metric | Value |
 |---|---|---|
-| Diana (stamp/signature) | Precision / Recall / Mean IoU per class | ⟪TBD⟫ |
-| Jordan (regions) | Per-class Mean IoU, macro mean IoU | ⟪TBD⟫ |
+| Diana (stamp/signature) | Precision / Recall / Mean IoU per class | stamp 0.903/0.875/0.822 — signature 0.894/0.638/0.815 |
+| Jordan (regions) | Per-class Mean IoU, macro mean IoU | 0.812–0.896 per class — macro **0.873** |
 | Damir (OCR) | CER / WER (primary, receipts) / CER (secondary, invoices) | 0.2152 / 0.5423 (receipts) — 0.0002 (invoices) |
-| Hessam (integration) | N of 750 invoices Ready under Default policy | ⟪TBD⟫ |
+| Hessam (integration) | N of 750 invoices Ready under Default policy | **475 / 750 (63.3%)** |
 
 <!-- speaker notes:
-Be upfront: these numbers are structured and ready to receive real values the moment training
-finishes — we are not hiding behind "TBD," we're showing exactly what will be reported and why
-each metric was chosen. -->
+These are the final numbers — every one of them is traceable to a specific metrics JSON or the
+final_pipeline_report.md. Be ready to state the full readiness spread (Lenient 100% / Default
+63.3% / Strict 0%) if asked, and to explain the Strict=0% result the same honest way it's framed
+on the readiness-spread slide. -->
 
 ---
 

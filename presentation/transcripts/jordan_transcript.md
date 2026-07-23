@@ -40,14 +40,21 @@ matter for the business logic.
 
 [SHOW: `outputs/metrics/region_iou_metrics.json`]
 
-⟪TBD: Jordan per-class precision/recall/mean-IoU and macro mean IoU (from
-region_iou_metrics.json) — landing once training on Colab finishes; the evaluation methodology
-you just saw is final.⟫ I evaluate on the dataset's
-own official test split of 98 images, then run inference on the 750 real invoices tagged
-`source="invoice"`. Receipts are about 460 pixels wide; our invoices are full-page, 1654 by 2339 —
-that's a real domain shift, so invoice results are counts only, never accuracy.
+Here are the final per-class numbers. **Company**: precision 0.897, recall 0.819, mean IoU 0.894.
+**Date**: precision 0.756, recall 0.855, mean IoU 0.812 — my weakest precision, which makes sense,
+dates are short numeric strings that are easy to confuse with other numeric text on a receipt.
+**Address**: precision 0.880, recall 0.883, mean IoU 0.896 — my best-localized class. **Total**:
+precision 0.763, recall 0.783, mean IoU 0.887. **Other_text**: precision 0.911, recall 0.967, mean
+IoU 0.877 — high recall makes sense, it's the catch-all class. **Macro mean IoU across all five
+classes: 0.873.** I evaluate on the dataset's own official test split of 98 images, then run
+inference on the 750 real invoices tagged `source="invoice"`. Receipts are about 460 pixels wide;
+our invoices are full-page, 1654 by 2339 — that's a real domain shift, so invoice results are
+counts only, never accuracy. The good news: **750 of 750 invoices** get at least one region
+detection — unlike a visual mark like a stamp, business-text regions are present everywhere, so
+the detector transfers usefully even without invoice-native training data.
 
-[SHOW: `outputs/figures/region_detection_examples.png`]
+[SHOW: presentation/images/region_detection_examples.png]
+[SHOW: presentation/images/metrics_per_class.png]
 
 ---
 

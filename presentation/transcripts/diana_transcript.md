@@ -46,14 +46,20 @@ to Jordan's.
 [SHOW: `outputs/metrics/stamp_signature_metrics.json`]
 
 I report precision, recall, and mean IoU **per class**, on a real held-out split — never a single
-blended number. ⟪TBD: Diana stamp/signature precision, recall, mean-IoU per class (from
-stamp_signature_metrics.json) — training was still finishing at the time of this rehearsal; the
-structure and evaluation method you just saw don't change.⟫ Then I run inference on the 750 real invoices — and because neither
-SignverOD nor StaVer is actually invoices, that's a real domain gap, so on the invoices I only
-report detection counts and confidence distributions, never a precision or recall number, because
-there's no invoice-level ground truth to score against.
+blended number. **Stamp** comes in at precision 0.903, recall 0.875, mean IoU 0.822 — 56 true
+positives, 6 false positives, 8 false negatives. **Signature** is precision 0.894, recall 0.638,
+mean IoU 0.815 — 673 true positives, 80 false positives, but 382 false negatives. That recall gap
+is worth naming out loud: the model is conservative on signatures, it misses more real signatures
+than it falsely calls, which matters if this feeds a "must be signed" compliance check. Then I run
+inference on the 750 real invoices — and because neither SignverOD nor StaVer is actually
+invoices, that's a real domain gap, so on the invoices I only report detection counts, never a
+precision or recall number, because there's no invoice-level ground truth to score against. And
+the honest result is **0 of 750 invoices** get any stamp or signature detection at all — this
+corpus is clean, unsigned digital templates, so zero is the *correct* answer, not a failure; my
+held-out IoU numbers above show the detector itself works.
 
-[SHOW: `outputs/figures/stamp_signature_detection_examples.png`]
+[SHOW: presentation/images/stamp_signature_detection_examples.png]
+[SHOW: presentation/images/diana_confusion_matrix.png]
 
 ---
 

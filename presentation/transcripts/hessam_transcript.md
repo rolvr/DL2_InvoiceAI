@@ -43,12 +43,21 @@ invoices at once, see "N of 750 pass," filter, and export the passing set. **Mod
 real metrics from every member plus a local-CPU-vs-Colab-GPU comparison, for the technical
 audience.
 
-[SHOW: `presentation/final_report.md` §5 Results — placeholder tables]
+[SHOW: `presentation/final_report.md` §5 Results — final tables]
 
-⟪TBD: all headline results (Diana P/R/IoU, Jordan per-class IoU, Damir CER/WER, N-of-750-pass
-under each policy) — Diana's and Jordan's training runs, and verification of Damir's completed
-run, were still in progress at the time of this rehearsal; the results section is fully
-structured and will be populated the moment those numbers land.⟫
+Here's where it all lands. Diana: stamp precision/recall/mean-IoU 0.903/0.875/0.822, signature
+0.894/0.638/0.815 — but 0 of 750 invoices actually have a detected mark, because this corpus is
+unsigned digital templates. Jordan: per-class mean IoU from 0.812 (date) to 0.896 (address),
+macro mean IoU 0.873, and unlike Diana's visual marks, region detections cover 750 of 750
+invoices. Damir: CER 0.215 / WER 0.542 on the harder receipt test split, CER 0.0002 on the easier
+clean invoices — always reported together. And the number I own directly: **the readiness spread
+across three preset policies on the same 750 invoices — Lenient 750/750 (100%), Default 475/750
+(63.3%), Strict 0/750 (0%).** That spread is the whole point of building a configurable engine
+instead of one hardcoded rule — and Strict landing at exactly zero is the fail-closed design
+working correctly on a corpus with no visual marks, not a bug I need to explain away.
+
+[SHOW: presentation/images/readiness_by_policy.png]
+[SHOW: presentation/images/metrics_per_class.png]
 
 ---
 
