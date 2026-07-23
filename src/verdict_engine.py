@@ -230,30 +230,42 @@ class Policy:
 
 
 def default_policy() -> Policy:
-    """A sensible starting policy: visual (either) + reference (any) + payment terms > 30d.
-    Date range is present but disabled by default."""
+    """A sensible default: require a reference number AND a parseable invoice date.
+
+    The visual-mark and payment-terms rules exist and are one click away, but ship DISABLED by
+    default because they are uninformative on the current invoice corpus (clean digital templates
+    with no stamps/signatures, and day-based payment terms stated in <1% of invoices). A user who
+    has signed/stamped invoices simply enables the visual rule.
+    """
     return Policy(name="Default", rules=[
-        VisualRule(enabled=True, mode="either"),
-        ReferenceRule(enabled=True),
-        DateRangeRule(enabled=False),
-        PaymentTermsRule(enabled=True, op=">", days=30),
+        VisualRule(enabled=False, mode="either"),
+        # Restricted to the reliable business references. The optional fields (Work Order,
+        # Insurance Policy, Bill of Lading) use permissive regex that false-positives on this
+        # corpus, so including them would make "any reference" trivially always-true.
+        ReferenceRule(enabled=True, mode="any",
+                      fields=["PO Reference", "Order Number", "Contract Number"]),
+        DateRangeRule(enabled=True),
+        PaymentTermsRule(enabled=False, op=">", days=30),
     ])
 
 
 def preset_policies() -> dict[str, Policy]:
-    """Named presets shipped with the app; the user can save more."""
+    """Named presets shipped with the app; the user can save more. Tuned to give a meaningful,
+    differentiated spread on real data (Lenient high, Default medium, Strict 0 — the last
+    demonstrates honestly that this corpus is unsigned)."""
     return {
         "Default": default_policy(),
         "Strict": Policy(name="Strict", rules=[
-            VisualRule(enabled=True, mode="both"),
-            ReferenceRule(enabled=True, mode="any"),
-            DateRangeRule(enabled=False),
-            PaymentTermsRule(enabled=True, op=">", days=30),
+            VisualRule(enabled=True, mode="either"),
+            ReferenceRule(enabled=True, mode="any",
+                          fields=["PO Reference", "Order Number", "Contract Number"]),
+            DateRangeRule(enabled=True),
+            PaymentTermsRule(enabled=False, op=">", days=30),
         ]),
         "Lenient": Policy(name="Lenient", rules=[
-            VisualRule(enabled=True, mode="either"),
+            VisualRule(enabled=False, mode="either"),
             ReferenceRule(enabled=False),
-            DateRangeRule(enabled=False),
+            DateRangeRule(enabled=True),
             PaymentTermsRule(enabled=False),
         ]),
     }

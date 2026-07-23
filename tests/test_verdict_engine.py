@@ -17,17 +17,17 @@ READY = {
 
 
 def test_default_policy_ready():
+    # Default now = reference (any) + parseable invoice date. READY satisfies both.
     v = evaluate(READY, default_policy())
     assert v.ready is True
-    assert v.n_enabled == 3 and v.n_pass == 3
+    assert v.n_enabled == 2 and v.n_pass == 2
 
 
-def test_payment_terms_fail_flips_verdict():
-    sig = dict(READY, billing_due_days=14)  # 14 !> 30
-    v = evaluate(sig, default_policy())
-    assert v.ready is False
-    terms = [r for r in v.rules if "Payment" in r.name][0]
-    assert terms.status == "fail"
+def test_payment_terms_rule():
+    pol = Policy(rules=[PaymentTermsRule(enabled=True, op=">", days=30)])
+    assert evaluate({"billing_due_days": 45}, pol).ready is True   # 45 > 30
+    assert evaluate({"billing_due_days": 14}, pol).ready is False  # 14 !> 30
+    assert evaluate({"billing_due_days": 14}, pol).rules[0].status == "fail"
 
 
 def test_fail_closed_on_missing_signal():
@@ -40,12 +40,9 @@ def test_fail_closed_on_missing_signal():
 
 
 def test_disabled_rule_ignored():
-    # disable the failing payment rule -> ready again
-    pol = default_policy()
-    for r in pol.rules:
-        if isinstance(r, PaymentTermsRule):
-            r.enabled = False
-    v = evaluate(dict(READY, billing_due_days=5), pol)
+    # a reference rule that WOULD fail (no refs present), disabled -> verdict ignores it
+    pol = Policy(rules=[DateRangeRule(enabled=True), ReferenceRule(enabled=False)])
+    v = evaluate({"invoice_date": "2025-01-01", "references": {}}, pol)
     assert v.ready is True
 
 
