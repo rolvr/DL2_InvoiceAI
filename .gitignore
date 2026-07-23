@@ -25,6 +25,9 @@ data/annotations/*.zip
 # --- Models (large binary artifacts; track via README + release, not git) ---
 models/**/*.pt
 models/**/*.pth
+# ultralytics auto-downloads its base weights into the CWD; never track those
+yolov8*.pt
+yolo11*.pt
 models/**/*.h5
 models/**/*.onnx
 models/**/*.weights
