@@ -34,9 +34,14 @@ derive boxes myself using `cv2.connectedComponentsWithStats`, and I cross-check 
 count against the `numStamps` value in each scan's info file as a sanity check that I'm not
 under- or over-segmenting stamps.
 
-I trained under the `colab_gpu` profile — 100 epochs, image size 960, batch size 16, patience 20
-for early stopping — and evaluate with a confidence threshold of 0.25 and an IoU match threshold
-of 0.5, using the team's shared `src/iou.py` so my numbers are directly comparable to Jordan's.
+A quick word on compute, because it shaped my results. I first trained at our full budget — 100
+epochs, image size 960. Colab ran out of GPU allocation at epoch 86, and because the checkpoints
+were on the ephemeral disk, that entire run was lost when the runtime recycled. So I retrained at a
+reduced budget — **image size 640 and a cap of 50 epochs** — and, importantly, I now write
+checkpoints to Google Drive with `save_period=10` and made the cell resume-aware, so a disconnect
+can never cost me the whole run again. I evaluate with a confidence threshold of 0.25 and an IoU
+match threshold of 0.5, using the team's shared `src/iou.py` so my numbers are directly comparable
+to Jordan's.
 
 [SHOW: `outputs/metrics/stamp_signature_metrics.json`]
 

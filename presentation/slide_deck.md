@@ -125,7 +125,8 @@ trickiest engineering piece of this notebook — know it cold for questions. -->
 
 # Diana — Parameters & Evaluation
 
-- **colab_gpu profile:** epochs 100, imgsz 960, batch 16, patience 20
+- **As run (budget-optimized):** epochs **≤50**, imgsz **640**, batch 16, patience 20
+  - reduced from 100 / 960 after a **GPU-budget exhaustion at epoch 86** (see Challenges)
 - Inference confidence threshold **0.25**; IoU match threshold **0.5** (`src/iou.py`)
 - **Per-class** precision / recall / mean IoU on a real held-out split
 - Inference on 750 invoices → **detection counts only** (no invoice-level GT)

@@ -386,7 +386,8 @@ def nb_diana():
                 "invoice images.",
                 "Drive: `datasets/signatures/`, `datasets/stamps/`, invoice manifest",
                 "`stamp_signature_predictions.csv`, metrics JSON, figure, weights",
-                "~45–90 min on a T4"),
+                "~20–40 min on a T4 (budget-optimized: imgsz 640 / ≤50 epochs — see the "
+                "training cell; checkpoints go to Drive so a disconnect is resumable)"),
         md("""### The rule that cannot bend
 `stamp` and `signature` are **always two separate labels**. Never merge them into one
 "authorization mark" class, never rename either string — the final JSON schema, the Streamlit UI,
@@ -523,17 +524,37 @@ yaml.write_text(f"path: {D}\\ntrain: train/images\\nval: val/images\\n"
                 f"nc: 2\\nnames: {NAMES}\\n")
 print("train:", len(list((D/'train'/'images').glob('*'))),
       "| val:", len(list((D/'val'/'images').glob('*'))))"""),
-        co("""# --- Train (colab_gpu budget) -------------------------------------------------
+        co("""# --- Train (BUDGET-OPTIMIZED: imgsz 640, <=50 epochs) + Drive checkpointing ----
+# A first attempt at the colab_gpu default (imgsz 960 / 100 epochs) exhausted the
+# Colab GPU budget at epoch 86, and because checkpoints were on the ephemeral
+# /content disk the run was lost when the runtime recycled. We therefore cut the
+# budget (smaller image size, fewer epochs) AND write checkpoints to Drive so any
+# future disconnect is resumable. See the report's Challenges / Lessons Learned.
 from ultralytics import YOLO
 
-model = YOLO("yolov8n.pt")
-res = model.train(
-    data=str(yaml), epochs=P["epochs"], imgsz=P["imgsz"], batch=P["batch"],
-    workers=P.get("workers", 2), device=0, patience=P.get("patience", 20),
-    project="/content/runs", name="stamp_sig", exist_ok=True, verbose=True,
-)
-BEST = Path("/content/runs/stamp_sig/weights/best.pt")
-print("best weights:", BEST, BEST.exists())"""),
+P["imgsz"] = 640          # down from 960 -- much faster per epoch, minor accuracy cost
+P["epochs"] = 50          # hard cap; enough for a usable 2-class YOLOv8n under the budget
+
+CKPT = root / "outputs" / "diana" / "runs"       # on DRIVE -- survives a runtime recycle
+CKPT.mkdir(parents=True, exist_ok=True)
+LAST = CKPT / "stamp_sig" / "weights" / "last.pt"
+
+if LAST.exists():
+    # Resume a partially-completed run. If the runtime was recycled, re-run the dataset
+    # cells above first (they cost no GPU), then this cell resumes from the Drive copy.
+    print("resuming from", LAST)
+    model = YOLO(str(LAST))
+    model.train(resume=True)
+else:
+    model = YOLO("yolov8n.pt")
+    model.train(
+        data=str(yaml), epochs=P["epochs"], imgsz=P["imgsz"], batch=P["batch"],
+        workers=P.get("workers", 2), device=0, patience=P.get("patience", 20),
+        project=str(CKPT), name="stamp_sig", exist_ok=True,
+        save_period=10, verbose=True,             # save_period -> periodic Drive checkpoints
+    )
+BEST = CKPT / "stamp_sig" / "weights" / "best.pt"
+print("best weights:", BEST, BEST.exists(), "| budget: imgsz", P["imgsz"], "epochs", P["epochs"])"""),
         co("""# --- Per-class precision / recall / mean IoU on the REAL held-out split -------
 from src.iou import compute_iou           # Jordan's module - import, never reimplement
 

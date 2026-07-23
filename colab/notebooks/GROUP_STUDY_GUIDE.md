@@ -135,8 +135,13 @@ manifest, datasets all present and at the right paths) before anyone burns GPU t
   - StaVer ships **no boxes** — only binary masks → boxes are **derived with connected-components**
     (`cv2.connectedComponentsWithStats`), cross-checked against the `numStamps` count. This is the
     trickiest part of your notebook; know it cold.
-- **Key parameters (colab_gpu):** imgsz **960**, epochs **100**, batch **16**, patience **20**,
-  confidence threshold **0.25**, IoU match threshold **0.5**.
+- **Key parameters (as run, budget-optimized):** imgsz **640**, epochs **≤50**, batch **16**,
+  patience **20**, confidence **0.25**, IoU match **0.5**. *(Reduced from imgsz 960 / 100 epochs
+  after the Colab GPU budget ran out at epoch 86 — be ready to explain this; see Challenges below.)*
+- **Budget challenge (know this for Q&A):** the first full-budget run died at epoch 86 and was lost
+  because checkpoints were on Colab's ephemeral disk. The notebook now trains at imgsz 640 / ≤50
+  epochs AND checkpoints to Google Drive (`save_period=10`, resume-aware) so a disconnect is
+  recoverable. Lesson: match the budget to free-tier Colab, and always checkpoint to durable storage.
 - **Tuning:** early-stopping via `patience`; class balance between stamp/signature; confidence
   threshold trades precision vs recall.
 - **Evaluation:** **precision / recall / mean-IoU per class** on the real held-out split, using the

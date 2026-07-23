@@ -141,8 +141,10 @@ binary ground-truth masks; boxes are *derived* using `cv2.connectedComponentsWit
 count of derived boxes is cross-checked against each scan's `numStamps` count from its info file
 as a sanity check.
 
-**Key parameters (colab_gpu):** epochs 100, imgsz 960, batch 16, patience 20; inference confidence
-threshold **0.25**; IoU match threshold **0.5** (via the shared `src/iou.py`, never reimplemented).
+**Key parameters (as run):** epochs **≤50**, imgsz **640**, batch 16, patience 20; inference
+confidence threshold **0.25**; IoU match threshold **0.5** (via the shared `src/iou.py`, never
+reimplemented). *These were reduced from the `colab_gpu` default (100 epochs / imgsz 960) after a
+GPU-budget exhaustion — see §6.1 Challenges and §6.2 Lessons Learned.*
 **Evaluation:** precision, recall, and mean IoU computed **per class** on a real held-out split of
 SignverOD + StaVer — never merged into one detection score, since a "must be signed" business rule
 needs the signature number specifically. Inference is then run on the 750 invoices and reported as
@@ -334,7 +336,7 @@ Invoice inference (domain shift, counts only): ⟪TBD: invoices with ≥1 region
 
 | Member | Profile | Epochs | imgsz | Batch | Wall-clock |
 |---|---|---|---|---|---|
-| Diana | colab_gpu | 100 | 960 | 16 | ⟪TBD: Diana wall_clock_sec⟫ |
+| Diana | colab_gpu* | ≤50 | 640 | 16 | ⟪TBD: Diana wall_clock_sec⟫ |
 | Jordan | colab_gpu | 100 | 960 | 16 | ⟪TBD: Jordan wall_clock_sec⟫ |
 | Damir | colab_gpu | — (no training) | — | — | ⟪TBD: Damir wall_clock_sec⟫ |
 
@@ -368,10 +370,42 @@ position than glossing over it.
   (a readiness check must not pass what it cannot confirm), but it means Not-ready counts include
   both genuinely-failing invoices and invoices the pipeline simply could not evaluate — the
   per-rule breakdown always distinguishes the two so this is never silently conflated.
-- **Compute budget.** All headline numbers come from the `colab_gpu` profile (100 epochs, imgsz
-  960, full dataset). The `local_cpu` profile (10 epochs, imgsz 416, 250-image subsample) exists
-  purely for fast iteration on a CPU-only development machine and is not the basis for any
-  reported metric.
+- **Compute budget.** Jordan's and Damir's numbers come from the `colab_gpu` profile (100 epochs,
+  imgsz 960, full dataset). **Diana's model is the exception** — it was retrained at a reduced
+  budget (≤50 epochs, imgsz 640) after exhausting the Colab GPU allocation, so its metrics reflect
+  that smaller budget (see §6.1–§6.2). The `local_cpu` profile (10 epochs, imgsz 416, 250-image
+  subsample) exists purely for fast iteration on a CPU-only dev machine and backs no reported metric.
+
+### 6.1 Challenges Encountered
+
+- **GPU-budget exhaustion mid-training (stamp/signature model).** Diana's 2-class YOLOv8n detector
+  was first launched at the `colab_gpu` default (imgsz 960, 100 epochs). The Colab GPU allocation
+  ran out at **epoch 86**, and because Ultralytics wrote its checkpoints to the ephemeral `/content`
+  disk, the run was **lost entirely** when the runtime was recycled — 86 epochs of compute
+  discarded, with no resumable state. This forced a re-run under a deliberately reduced budget:
+  **imgsz 640 and a hard cap of 50 epochs**. The trade-off is a modest expected drop in localisation
+  precision (smaller input resolution resolves small marks less sharply) in exchange for a run that
+  completes inside one GPU window.
+- **Ephemeral vs durable storage.** The root cause was not the budget itself but *where checkpoints
+  lived*: nothing on `/content` survives a runtime recycle, so a partial run had zero salvage value.
+- **Free-tier variability.** Colab GPU availability and session length are not guaranteed, which
+  makes long single-shot training runs fragile for a team sharing the free tier.
+
+### 6.2 Lessons Learned
+
+- **Match the compute budget to the platform, not the ideal.** A 100-epoch / imgsz-960 plan is
+  reasonable on dedicated hardware but is the wrong shape for free-tier Colab. Diana's notebook now
+  runs **imgsz 640 / ≤50 epochs** — near-converged for YOLOv8n on this data while fitting the budget.
+- **Always checkpoint to durable storage.** Diana's training now writes to a **Drive-backed run
+  directory with `save_period=10`**, and the training cell is **resume-aware** (`YOLO(last.pt)
+  .train(resume=True)`): a future disconnect resumes from the last Drive checkpoint instead of
+  restarting from scratch. Had this been in place initially, the 86-epoch run would have been
+  recoverable.
+- **`best.pt` ≠ the last epoch.** Ultralytics tracks the best *validation* checkpoint independently,
+  so with early-stopping (`patience`) the full epoch count is rarely needed — a reason a 50-epoch
+  cap costs less accuracy than the raw number suggests.
+- **Budget is a shared team resource.** Sequencing members' GPU runs (rather than everyone training
+  at once) avoids collectively exhausting the free-tier allocation.
 
 ## 7. Conclusion & Future Work
 
