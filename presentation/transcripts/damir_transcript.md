@@ -29,16 +29,29 @@ say, an Insurance Certificate number — just by editing a config file, with no 
 
 Here's where I want to be really upfront about evaluation, because I have **two eval sets of very
 different strength**, and I report both, always with context. My **primary** set is the OCR
-Dataset's own test split — 973 documents, **100% coverage**, real per-box ground-truth
-transcriptions — so I can compute genuine **CER** and **WER**, character and word error rate,
-using `jiwer`. Lower is better. ⟪TBD: Damir primary CER/WER mean+median (from ocr_parameter_metrics.json → ocr_primary) —
-landing once this run is verified.⟫
+Dataset's own receipt test split — 98 scored documents, real per-box ground-truth
+transcriptions — so I can compute genuine **CER** and **WER**, character and word error rate.
+Lower is better. Here: **CER 0.2152 mean / 0.1751 median, WER 0.5423 mean / 0.5225 median.** These
+receipts are real scanned photos — skewed, low-res, sometimes faded — so this is a genuinely hard
+OCR case, and I'd rather show that honestly than cherry-pick an easier number.
 
-My **secondary** set is real full-page batch_1 invoices with ground-truth OCR text from the
-annotation CSVs — a genuinely harder, more realistic check, but small, and I always state the
-denominator out loud: only about **197 of the 750** manifest images have any ground truth at all,
-because annotation CSVs exist only for batch_1. I'd rather say that number every time than let
-someone assume the secondary check covers the whole dataset.
+My **secondary** set is the 120 real full-page batch_1 invoices I actually ran EasyOCR on, scored
+against ground-truth OCR text from the annotation CSVs: **CER 0.0002 mean, essentially
+character-perfect.** I always say the denominator and the reason out loud — these are clean,
+digitally-rendered invoice images, not scanned photos, so near-perfect OCR here is real but it's
+an easy case, not a representative one. I never quote 0.0002 next to 0.2152 as if they're
+comparable difficulty; I report both, side by side, every time.
+
+One more thing I want to flag before questions: once I confirmed the manifest is now 100%
+batch_1 and every one of those 750 images has ground-truth OCR text in the annotation CSVs, I
+completed full 750-invoice coverage for the parameter/terms CSVs entirely on CPU — no additional
+OCR, no GPU, no notebook re-run. 120 invoices use my real EasyOCR text, the other 630 fall back to
+the annotation ground-truth text, and both go through the exact same `check_all_fields` /
+terms-extraction functions. And on payment terms specifically: across all 750, 99.6% have a
+parseable invoice date, but only 0.4% — three invoices — match any "Net 30"-style day-based terms
+phrasing. This corpus's invoices just don't carry that language, so our verdict engine's
+payment-terms rule comes back "unknown" and fails closed for almost every invoice here. That's a
+real limitation of the corpus, worth stating plainly rather than glossing over.
 
 [SHOW: `outputs/predictions/parameter_presence_results.csv` and `terms_extraction_results.csv`]
 
@@ -72,3 +85,12 @@ canonical format to regex against. That matters directly for readiness: if a gen
 is present but OCR quality or format variation causes us to miss it, our fail-closed verdict engine
 would mark that invoice Not-ready even though it should pass — which is why I always report the
 denominator and coverage honestly, so the team understands where that risk concentrates.
+
+**Q4: Some of your optional fields show a 100% presence rate — is that real?**
+A: It's a real output of the shared, unmodified `check_all_fields` function, but I don't trust it
+as a clean signal. A couple of the config patterns are too permissive for this corpus — Bill of
+Lading's `[A-Z0-9-]{6,20}` regex matches the plain word "INVOICE", Work Order's pattern matches
+"WORTH", and the PO Reference keyword "PO" matches as a substring inside words like "CORPORATION".
+So those numbers are an upper bound driven by false positives, not genuine field detection. The
+two REQUIRED fields — PO Reference and Order Number — are the ones that actually gate readiness,
+and I report those separately: 54.7% and 19.9% respectively.

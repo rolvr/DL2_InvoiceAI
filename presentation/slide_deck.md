@@ -195,17 +195,22 @@ a new required field from the sidebar with zero code changes. -->
 
 # Damir — Two Evaluation Sets, Reported Honestly
 
-**Primary — OCR Dataset test split (100% coverage, real per-box GT text)**
+**Primary — OCR Dataset receipt test split (98 images, real per-box GT text, real GPU EasyOCR)**
 
 | Metric | Value |
 |---|---|
-| CER (mean) | ⟪TBD⟫ |
-| WER (mean) | ⟪TBD⟫ |
+| CER (mean) | 0.2152 |
+| WER (mean) | 0.5423 |
 
-**Secondary — real batch_1 invoices (small, but real full-page invoices)**
+**Secondary — real batch_1 invoices (small sample of the OCR run, but real full-page invoices)**
 
-- Denominator always stated: only **~197 of 750** manifest images carry any ground truth
-- CER (mean): ⟪TBD⟫
+- 120 invoices scored (the ones Damir's notebook actually ran EasyOCR on); ground truth now
+  exists for **all 750** manifest images (100% batch_1), so text coverage for the downstream
+  parameter/terms extraction is 750/750 — completed locally on CPU, no additional OCR
+- CER (mean): **0.0002** — near-perfect, but on clean synthetic invoices, not scanned photos
+
+**Never one headline number** — near-perfect on clean invoices, CER 0.215 / WER 0.542 on real
+receipt photos. Both are real, both are reported.
 
 <!-- speaker notes:
 Always name the denominator when reporting the secondary number — it's honest and it's a
@@ -274,7 +279,7 @@ progress at report time — every cell below is a placeholder, not a guess.*
 |---|---|---|
 | Diana (stamp/signature) | Precision / Recall / Mean IoU per class | ⟪TBD⟫ |
 | Jordan (regions) | Per-class Mean IoU, macro mean IoU | ⟪TBD⟫ |
-| Damir (OCR) | CER / WER (primary, 100% coverage) | ⟪TBD⟫ |
+| Damir (OCR) | CER / WER (primary, receipts) / CER (secondary, invoices) | 0.2152 / 0.5423 (receipts) — 0.0002 (invoices) |
 | Hessam (integration) | N of 750 invoices Ready under Default policy | ⟪TBD⟫ |
 
 <!-- speaker notes:
