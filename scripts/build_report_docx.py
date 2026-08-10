@@ -722,16 +722,22 @@ def build():
             ["Sample final-JSON records produced", "750"],
             ["Invoices with both stamp AND signature detected",
              "0 (Diana: 0/750 invoice detections)"],
-            ["Default policy - N of 750 pass", "475 / 750 (63.3%)"],
+            ["Default policy - N of 750 pass", "~0 / 750 (~0%)"],
             ["Strict policy - N of 750 pass", "0 / 750 (0.0%)"],
             ["Lenient policy - N of 750 pass", "750 / 750 (100.0%)"],
+            ["Graded completeness - Ready (score >= 80)", "315 / 750 (42.0%)"],
+            ["Graded completeness - Needs review (60-79)", "93 / 750 (12.4%)"],
+            ["Graded completeness - Not ready (< 60)", "342 / 750 (45.6%)"],
         ],
         col_widths=[3.5, 3.5],
     )
     add_figure(doc, "readiness_by_policy.png",
-               "Figure 6. Obligation-readiness across the 750-invoice batch under three preset "
-               "verdict policies. Strict = 0% because Strict requires a visual mark and this "
-               "invoice corpus contains none - a fail-closed, correct verdict given the corpus.")
+               "Figure 6. Obligation-readiness across the 750-invoice batch. Strict fail-closed "
+               "policies: Lenient 100%, Default ~0% (requires a PO/contract reference the corpus "
+               "lacks), Strict 0% (also requires a visual mark it lacks) - an honest domain gap, "
+               "not an engine defect. An earlier Default 63.3% was a loose-matching artifact, "
+               "since corrected. The graded completeness score gives the meaningful spread: "
+               "Ready 42.0%, Needs review 12.4%, Not ready 45.6% (mean 76.3).")
     body(doc, "Region detections on invoices (Jordan, source=invoice, total boxes across all "
                "750 invoices):", bold=True)
     add_table(

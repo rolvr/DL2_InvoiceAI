@@ -478,21 +478,20 @@ def build():
 
     # ============ 12. READINESS SPREAD ============
     s = blank_slide(prs)
-    add_title(s, "The Readiness Spread — Same 750 Invoices, Three Policies")
+    add_title(s, "The Readiness Spread — Same 750 Invoices, Two Views")
     add_picture_fit(s, "readiness_by_policy.png", Inches(2.4), Inches(1.15), Inches(8.5), Inches(4.6))
     add_bullets(s, [
-        "Lenient (no visual-mark requirement): 750 / 750 (100%) ready",
-        "Default (reference number + date, no visual-mark requirement): 475 / 750 (63.3%) ready",
-        "Strict (requires stamp AND signature): 0 / 750 (0%) ready",
+        "Strict policies (fail-closed): Lenient 750/750 (100%), Default ~0/750 (~0%), Strict 0/750 (0%)",
+        "Default ~0% = corpus carries no PO/contract references (earlier 63.3% was a matching artifact, corrected)",
+        "Graded completeness: Ready 315/750 (42.0%), Needs review 93 (12.4%), Not ready 342 (45.6%), mean 76.3",
     ], top=Inches(5.85), height=Inches(1.5), size=14)
     set_notes(s,
-        "This chart is the single clearest proof that the verdict engine is a real, working, "
-        "configurable system and not a fixed script - same 750 invoices, same underlying signals, "
-        "three different answers depending on the policy toggled. Strict landing at exactly 0% is "
-        "not a bug: this corpus is unsigned digital templates, Diana's detector correctly finds "
-        "0/750 stamps or signatures on it, and a policy that requires a visual mark will "
-        "fail-closed on all of them. That is the fail-closed design working as intended, and we "
-        "say so directly rather than hiding a 0% number.")
+        "The verdict engine is a real, configurable system - same 750 invoices, different honest "
+        "outcomes. The strict Default is ~0% because the corpus carries no PO/contract references "
+        "(an earlier 63.3% there was a loose-matching artifact, since corrected); Strict is 0% "
+        "because there are no stamps/signatures - fail-closed working as intended. Because the "
+        "strict gate can't differentiate this corpus, we add a standardized graded completeness "
+        "score (Ready 42%, Needs review 12%, Not ready 46%) that yields a meaningful, auditable spread.")
 
     # ============ 13. LIVE DEMO ============
     s = blank_slide(prs)
@@ -522,16 +521,16 @@ def build():
              "0.812–0.896 per class — macro 0.873"],
             ["Damir (OCR)", "CER / WER primary / CER secondary",
              "0.2152 / 0.5423 (receipts) — 0.0002 (invoices)"],
-            ["Hessam (integration)", "N of 750 Ready under Default policy", "475 / 750 (63.3%)"],
+            ["Hessam (integration)", "Readiness: strict / graded", "Default ~0%, Lenient 100%, Strict 0% / Ready 42.0% (315/750)"],
         ],
         Inches(0.6), Inches(1.5), Inches(12.1), Inches(3.2), header_fill=BLUE, font_size=13,
     )
     add_picture_fit(s, "metrics_per_class.png", Inches(1.4), Inches(4.9), Inches(10.5), Inches(2.2))
     set_notes(s,
-        "These are the final numbers - every one of them is traceable to a specific metrics JSON "
-        "or the final_pipeline_report.md. Be ready to state the full readiness spread (Lenient "
-        "100% / Default 63.3% / Strict 0%) if asked, and to explain the Strict=0% result the same "
-        "honest way it's framed on the readiness-spread slide.")
+        "These are the final numbers - traceable to each metrics JSON or the final_pipeline_report.md. "
+        "State the strict readiness spread (Lenient 100% / Default ~0% / Strict 0%) and the graded "
+        "completeness score (Ready 42%) if asked; the earlier Default 63.3% was a loose-matching "
+        "artifact, since corrected, and Strict=0% is the fail-closed design on an unsigned corpus.")
 
     # ============ 15. LIMITATIONS ============
     s = blank_slide(prs)

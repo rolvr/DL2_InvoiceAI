@@ -51,10 +51,12 @@ unsigned digital templates. Jordan: per-class mean IoU from 0.812 (date) to 0.89
 macro mean IoU 0.873, and unlike Diana's visual marks, region detections cover 750 of 750
 invoices. Damir: CER 0.215 / WER 0.542 on the harder receipt test split, CER 0.0002 on the easier
 clean invoices — always reported together. And the number I own directly: **the readiness spread
-across three preset policies on the same 750 invoices — Lenient 750/750 (100%), Default 475/750
-(63.3%), Strict 0/750 (0%).** That spread is the whole point of building a configurable engine
-instead of one hardcoded rule — and Strict landing at exactly zero is the fail-closed design
-working correctly on a corpus with no visual marks, not a bug I need to explain away.
+on the same 750 invoices — strict policies (Lenient 100%, Default ~0%, Strict 0%) plus a graded
+completeness score (Ready 42%, Needs review 12%, Not ready 46%).** The strict Default is ~0%
+because the corpus carries no PO/contract references — an honest domain gap; an earlier 63.3% there
+was an artifact of loose string matching, since corrected. The configurable engine is the whole
+point, and the graded score is what yields a meaningful spread when the strict gate can't — while
+Strict=0% remains the fail-closed design working correctly on a corpus with no visual marks.
 
 [SHOW: presentation/images/readiness_by_policy.png]
 [SHOW: presentation/images/metrics_per_class.png]

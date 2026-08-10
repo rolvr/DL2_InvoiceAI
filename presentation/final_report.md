@@ -418,24 +418,25 @@ long schema (`document_id, field_name, required, present, matched_text, match_me
 
 | Field | Required | Presence rate |
 |---|---|---|
-| PO Reference | yes | 54.7% |
-| Order Number | yes | 19.9% |
-| Contract Number | no | 1.1% |
+| PO Reference | yes | ~0% |
+| Order Number | yes | ~0% |
+| Contract Number | no | ~0% |
 | Project Reference | no | 0.0% |
-| Work Order No. | no | 100%* |
-| Insurance Policy Number | no | 100%* |
-| Bill of Lading Number | no | 100%* |
+| Work Order No. | no | ~0% |
+| Insurance Policy Number | no | ~0% |
+| Bill of Lading Number | no | ~0% |
 
 Required-field presence rate (PO Reference + Order Number, the two that gate Pistac.io readiness):
-**37.3%**. The three fields marked `*` hit 100% because their config patterns are permissive
-substring/regex matches (e.g. Bill of Lading's `[A-Z0-9-]{6,20}` matches the word "INVOICE"; Work
-Order's `WO[-\s]?[0-9A-Z]+` matches "WORTH"; PO Reference's `PO` keyword matches inside "CORPORATION")
-— real output of the shared, unmodified `parameter_checker.py`, but a false-positive-prone upper
-bound rather than a clean detection signal on this corpus (see `parameter_presence_rate_caveat` in
-`ocr_parameter_metrics.json`).
+**~0%**. An earlier version reported ~37–55% here, but that was a false positive from permissive
+matching — the 2-letter `PO` keyword matched inside words like "CORPORATION", and catch-all regex
+(Bill of Lading's `[A-Z0-9-]{6,20}`, Work Order's `WO[-\s]?[0-9A-Z]+`) matched "INVOICE"/"WORTH".
+After tightening every pattern to require a labelled identifier **with digits** and auditing the
+survivors (they are real 8-digit invoice numbers), required B2B references are honestly **~0%**:
+this retail-receipt-style corpus simply does not carry PO/contract/order numbers. That absence —
+not an OCR failure — is why the strict Default policy is ~0% below.
 
-**Terms parseability across all 750 invoices:** 99.6% have a parseable `invoice_date`; only 0.4%
-(3 invoices) match any day-based payment-terms phrasing or yield `billing_due_days`. This corpus's
+**Terms parseability across all 750 invoices:** 100% have a parseable `invoice_date`; only 0.8%
+(6 invoices) match any day-based payment-terms phrasing or yield `billing_due_days`. This corpus's
 invoices simply don't carry "Net 30"-style phrasing, so the verdict engine's payment-terms rule is
 `unknown → fail-closed` for nearly all of them — an honest, corpus-level finding, not an
 extraction bug.
@@ -450,16 +451,21 @@ Fused **750** per-invoice JSON records from all four upstream stages into
 | Invoices in manifest | 750 |
 | Sample final-JSON records produced | 750 |
 | Invoices with both stamp AND signature detected | 0 (Diana: 0/750 invoice detections — see §5.1) |
-| Default policy — N of 750 pass | 475 / 750 (63.3%) |
+| Default policy — N of 750 pass | ~0 / 750 (~0%) |
 | Strict policy — N of 750 pass | 0 / 750 (0.0%) |
 | Lenient policy — N of 750 pass | 750 / 750 (100.0%) |
+| Graded completeness — Ready (score ≥ 80) | 315 / 750 (42.0%) |
+| Graded completeness — Needs review (60–79) | 93 / 750 (12.4%) |
+| Graded completeness — Not ready (< 60) | 342 / 750 (45.6%) |
 
 ![Readiness by verdict policy](images/readiness_by_policy.png)
 
-*Figure 6. Obligation-readiness across the 750-invoice batch under three preset verdict
-policies. Strict = 0% because Strict requires a visual mark (stamp AND signature) and this
-invoice corpus contains none — a fail-closed, correct verdict given the corpus, not an engine
-defect (see §6 domain-gap discussion).*
+*Figure 6. Obligation-readiness across the 750-invoice batch. Strict fail-closed policies:
+Lenient 100%, Default ~0% (requires a PO/contract reference the corpus doesn't carry), Strict 0%
+(also requires a visual mark it lacks) — an honest domain gap, not an engine defect (see §6). An
+earlier version reported Default 63.3%, which was an artifact of loose string matching, since
+corrected. The standardized graded completeness score gives the meaningful spread on this corpus:
+Ready 42.0%, Needs review 12.4%, Not ready 45.6% (mean 76.3).*
 
 **Region detections on invoices** (Jordan, `source=invoice`, total boxes across all 750 invoices):
 

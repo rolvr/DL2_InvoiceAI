@@ -272,22 +272,27 @@ default, and we show it transparently in the breakdown rather than hiding the "u
 
 ---
 
-# The Readiness Spread — Same 750 Invoices, Three Policies
+# The Readiness Spread — Same 750 Invoices, Two Views
 
 ![height:430px](images/readiness_by_policy.png)
 
-- **Lenient** (no visual-mark requirement): **750 / 750 (100%)** ready
-- **Default** (reference number + date, no visual-mark requirement): **475 / 750 (63.3%)** ready
-- **Strict** (requires stamp AND signature): **0 / 750 (0%)** ready
-- The spread itself is the demo: one configurable engine, three honest outcomes on the same data
+**Strict rule-based policies (fail-closed):**
+- **Lenient** (parseable date only): **750 / 750 (100%)**
+- **Default** (reference number + date): **~0 / 750 (~0%)** — this corpus carries no PO/contract references
+- **Strict** (+ visual mark): **0 / 750 (0%)** — and no stamps/signatures either
+
+**Graded completeness score (standardized rubric):**
+- **Ready ≥ 80: 315 / 750 (42.0%)** · Needs review 93 (12.4%) · Not ready 342 (45.6%) · mean 76.3
+- One engine, honest outcomes — the graded view gives the meaningful spread the strict gate can't on this corpus
 
 <!-- speaker notes:
 This chart is the single clearest proof that the verdict engine is a real, working, configurable
-system and not a fixed script — same 750 invoices, same underlying signals, three different
-answers depending on the policy toggled. Strict landing at exactly 0% is not a bug: this corpus
-is unsigned digital templates, Diana's detector correctly finds 0/750 stamps or signatures on it,
-and a policy that requires a visual mark will fail-closed on all of them. That is the fail-closed
-design working as intended, and we say so directly rather than hiding a 0% number. -->
+system and not a fixed script — same 750 invoices, same underlying signals, different honest
+outcomes. The strict Default is ~0% because the corpus carries no PO/contract references (an
+earlier 63.3% there was a loose-matching artifact, since corrected); Strict is 0% because there
+are no stamps/signatures — fail-closed working as intended. Because the strict gate can't
+differentiate this corpus, we add a standardized graded completeness score (Ready 42% / Needs
+review 12% / Not ready 46%) that yields a meaningful, auditable spread. -->
 
 ---
 
@@ -317,13 +322,13 @@ instead of just a claim. -->
 | Diana (stamp/signature) | Precision / Recall / Mean IoU per class | stamp 0.903/0.875/0.822 — signature 0.894/0.638/0.815 |
 | Jordan (regions) | Per-class Mean IoU, macro mean IoU | 0.812–0.896 per class — macro **0.873** |
 | Damir (OCR) | CER / WER (primary, receipts) / CER (secondary, invoices) | 0.2152 / 0.5423 (receipts) — 0.0002 (invoices) |
-| Hessam (integration) | N of 750 invoices Ready under Default policy | **475 / 750 (63.3%)** |
+| Hessam (integration) | Readiness — strict policies / graded completeness | Default ~0% · Lenient 100% · Strict 0% / **Ready 42.0%** (315/750) |
 
 <!-- speaker notes:
 These are the final numbers — every one of them is traceable to a specific metrics JSON or the
-final_pipeline_report.md. Be ready to state the full readiness spread (Lenient 100% / Default
-63.3% / Strict 0%) if asked, and to explain the Strict=0% result the same honest way it's framed
-on the readiness-spread slide. -->
+final_pipeline_report.md. The earlier Default 63.3% was an artifact of loose string matching, since
+corrected — references are honestly ~0% on this corpus. State the strict spread (Lenient 100% /
+Default ~0% / Strict 0%) and the graded completeness (Ready 42%) if asked. -->
 
 ---
 
