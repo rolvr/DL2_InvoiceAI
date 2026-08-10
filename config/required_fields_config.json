@@ -3,44 +3,92 @@
     {
       "field_name": "PO Reference",
       "required": true,
-      "keywords": ["PO", "P.O.", "purchase order", "po ref"],
-      "patterns": ["PO[-\\s]?[0-9A-Z]+"]
+      "keywords": [
+        "purchase order",
+        "p.o.",
+        "po no",
+        "po number",
+        "po ref"
+      ],
+      "patterns": [
+        "\\bPO[-\\s#:]?\\d{2,}",
+        "\\bP\\.O\\.[-\\s#:]*\\d{2,}"
+      ]
     },
     {
       "field_name": "Order Number",
       "required": true,
-      "keywords": ["order no", "order number", "sales order"],
-      "patterns": ["ORD[-\\s]?[0-9A-Z]+"]
+      "keywords": [
+        "order number",
+        "order no.",
+        "sales order"
+      ],
+      "patterns": [
+        "\\bORD[-\\s#:]?\\d{2,}",
+        "\\border\\s*(?:no\\.?|number|#|:)\\s*[-#:]?\\s*\\d{2,}"
+      ]
     },
     {
       "field_name": "Contract Number",
       "required": false,
-      "keywords": ["contract no", "contract number", "agreement no"],
-      "patterns": ["CN[-\\s]?[0-9A-Z]+"]
+      "keywords": [
+        "contract no",
+        "contract number",
+        "agreement no"
+      ],
+      "patterns": [
+        "\\bCN[-\\s#:]?\\d{2,}",
+        "\\bcontract\\s*(?:no\\.?|#|:)\\s*\\d{2,}"
+      ]
     },
     {
       "field_name": "Work Order No.",
       "required": false,
-      "keywords": ["work order", "work order no", "wo no", "w/o", "job no", "job order"],
-      "patterns": ["WO[-\\s]?[0-9A-Z]+", "JOB[-\\s]?[0-9A-Z]+"]
+      "keywords": [
+        "work order",
+        "job order"
+      ],
+      "patterns": [
+        "\\bWO[-\\s#:]?\\d{2,}",
+        "\\bJOB[-\\s#:]?\\d{2,}"
+      ]
     },
     {
       "field_name": "Project Reference",
       "required": false,
-      "keywords": ["project ref", "project number", "project code"],
-      "patterns": ["PRJ[-\\s]?[0-9A-Z]+"]
+      "keywords": [
+        "project ref",
+        "project number",
+        "project code"
+      ],
+      "patterns": [
+        "\\bPRJ[-\\s#:]?\\d{2,}",
+        "\\bproject\\s*(?:no\\.?|#|code|:)\\s*\\d{2,}"
+      ]
     },
     {
       "field_name": "Insurance Policy Number",
       "required": false,
-      "keywords": ["policy no", "policy number", "insurance policy"],
-      "patterns": ["[A-Z]{2,5}[-\\s]?[0-9]{5,12}"]
+      "keywords": [
+        "insurance policy",
+        "policy no",
+        "policy number"
+      ],
+      "patterns": [
+        "\\bpolicy\\s*(?:no\\.?|number|#|:)\\s*[-#:]?\\s*[A-Z0-9][A-Z0-9-]{3,}"
+      ]
     },
     {
       "field_name": "Bill of Lading Number",
       "required": false,
-      "keywords": ["BL no", "B/L", "bill of lading"],
-      "patterns": ["[A-Z0-9-]{6,20}"]
+      "keywords": [
+        "bill of lading",
+        "b/l no",
+        "bl no"
+      ],
+      "patterns": [
+        "\\bB/?L[-\\s#:]?(?:no\\.?|#|:)?\\s*\\d{3,}"
+      ]
     }
   ],
   "custom_fields": []

@@ -1,100 +1,73 @@
-# Report Log — Diana (Annotation, Stamp Detection, Signature Detection Lead)
+# Diana — Stamp & Signature Detection · Report Log
 
-_Last updated: 2026-07-23 (final — Colab GPU training and evaluation complete)._
+> Destination in repo: `presentation/member_reports/diana_report_log.md`
+> Raw material for the group report + slide deck. Numbers are from the final run
+> `stamp_sig_768_defaug` (YOLOv8n, imgsz 768, 75 epochs, Tesla T4).
 
-## 1. Objective (what I was responsible for)
-Detect stamp and signature as two separate object classes on invoice images, and evaluate
-precision/recall/IoU separately per class.
+## Role
+Detect **stamp** and **signature** as two separate classes on document images and evaluate
+per class (precision / recall / mean-IoU) on a real held-out split. Two labels are kept
+strictly separate — the final JSON, Streamlit UI, and readiness logic all depend on it.
 
-## 2. What I did
-- Adapted **SignverOD** (2,765 document images, signature bounding boxes) by converting its
-  normalized `[x, y, w, h]` box format to pixel coordinates and keeping only category 1
-  (signature) — categories 2-4 (initials, redaction, date) are dropped since they are not the
-  classes I'm detecting.
-- Adapted **StaVer** (400 document scans, stamp ground-truth **masks**, no boxes) by deriving
-  bounding boxes from the binary masks with `cv2.connectedComponentsWithStats`, cross-checking
-  each derived count against the scan's recorded `numStamps` value as a sanity check.
-- Trained a single **YOLOv8n**, 2-class (`stamp`, `signature`) object detector on the combined,
-  converted data.
-- Evaluated precision, recall, and mean IoU **per class** (never blended) on a real held-out split
-  of SignverOD + StaVer, using the team's shared `src/iou.py` (IoU match threshold 0.5).
-- Ran inference on all 750 real invoices in the manifest and reported detection counts only (no
-  invoice-level ground truth exists to score against).
-- Survived a mid-training GPU-budget exhaustion (see §4) by retraining at a reduced, durable-
-  checkpointed budget.
+## Model & method
+- **YOLOv8n**, a single **2-class** detector (`stamp`, `signature`) — one shared backbone,
+  one-stage, fast enough for the Colab budget.
+- Trained on real data: **SignverOD** (signatures; `category_id == 1` only) and **StaVer**
+  (stamps; boxes *derived from binary GT masks* via connected components).
+- Dataset built: **2,287 train / 458 val** images.
 
-## 3. Approach & key decisions
-- **One 2-class YOLOv8n model, not two separate detectors.** Shares a single backbone, trains in
-  one pass, and still yields fully independent per-class metrics at evaluation time — so nothing is
-  lost by combining stamp and signature at the architecture level, and a downstream business rule
-  like "must be signed" can still be evaluated on the signature class alone.
-- **YOLOv8n over a two-stage detector (e.g. Faster R-CNN).** A one-stage architecture is faster to
-  train and run and is more than accurate enough for two visually distinct, compact marks, and it
-  fits comfortably inside a shared-team Colab GPU time budget.
-- **Mask-to-box derivation for StaVer**, since the dataset ships no boxes at all — connected-
-  component labeling on the binarized mask, with a minimum-area filter to suppress noise, and a
-  cross-check against each scan's `numStamps` field to catch merged/split components.
+## Key parameters (final run)
+`imgsz=768`, `epochs=75`, `batch=16`, `patience=20`, YOLO default augmentation **with
+rotation & shear disabled** (`degrees=0, shear=0`), `save_period=5` (Drive checkpoints),
+eval `conf=0.25`, IoU match threshold `0.5`. Wall-clock ≈ 3.5 h on a T4.
 
-## 4. Challenges faced & how I handled them
-- **Challenge:** GPU-budget exhaustion mid-training. The 2-class detector was first launched at the
-  `colab_gpu` default (100 epochs, imgsz 960). The Colab GPU allocation ran out at **epoch 86**, and
-  because Ultralytics wrote checkpoints to the ephemeral `/content` disk, the entire 86-epoch run
-  was lost when the runtime recycled — no resumable state.
-  - **Resolution / status:** Retrained at a deliberately reduced budget — **imgsz 640, ≤50
-    epochs** — and, critically, changed the training cell to write checkpoints to a **Drive-backed
-    run directory with `save_period=10`** and made it **resume-aware**
-    (`YOLO(last.pt).train(resume=True)`), so a future disconnect resumes from the last durable
-    checkpoint instead of restarting from scratch. This run completed and produced the final metrics
-    below.
+## Final results (real held-out split of SignverOD + StaVer)
 
-## 5. Results & metrics
-From `outputs/metrics/stamp_signature_metrics.json`:
+| Class | Precision | Recall | mean-IoU | mAP50 | mAP50-95 |
+|---|---|---|---|---|---|
+| **Stamp** | 0.906 | 0.906 | 0.815 | 0.923 | 0.61 |
+| **Signature** | 0.897 | 0.636 | 0.819 | 0.687 | 0.42 |
+| Overall (val) | — | — | — | 0.805 | 0.515 |
 
-| Class | Precision | Recall | Mean IoU | tp / fp / fn |
-|---|---|---|---|---|
-| stamp | 0.903 | 0.875 | 0.822 | 56 / 6 / 8 |
-| signature | 0.894 | 0.638 | 0.815 | 673 / 80 / 382 |
+Confidence sweep (0.15 / 0.25 / 0.40): signature recall is **flat** (0.644 → 0.636 → 0.632),
+so `conf=0.25` was kept (best stamp precision at equal recall).
 
-Run provenance (`_run` block): `colab_gpu` profile, Tesla T4, epochs ≤50, imgsz 640, batch 16,
-2,287 training images, evaluated on a real held-out split of SignverOD + StaVer, confidence
-threshold 0.25, IoU match threshold 0.5.
+**Invoice inference:** 0 / 750 detections — the invoice corpus is clean digital templates
+with no stamps or signatures. Reported as counts only (no invoice-level ground truth).
 
-**Invoice inference (750 real invoices, counts only — no ground truth):** 0 of 750 invoices have
-any stamp or signature detection (`detections_by_label: {}`). This is the honest, expected result
-of applying a document/receipt-trained detector to a corpus of clean, unsigned digital invoice
-templates — a property of the invoice corpus, not a failure of the detector, whose own held-out
-IoU (0.822 stamp / 0.815 signature) is strong.
+## What we learned (experiments)
+Three controlled runs isolated the drivers of IoU:
 
-## 6. Assumptions & limitations
-- **Domain gap.** Neither SignverOD nor StaVer is invoice-native — both are general document
-  scans. The detector is trained and evaluated honestly on its own source-domain held-out split,
-  then *applied* to invoices as a disclosed domain-transfer step; on invoices I report detection
-  counts only, never precision/recall/accuracy, since there is no invoice-level ground truth.
-- **Signature recall (0.638) is meaningfully lower than precision (0.894).** The model is
-  conservative on signatures — 382 false negatives vs. 80 false positives — which matters if this
-  feeds a compliance rule that requires signature evidence; recall can be raised by lowering the
-  inference confidence threshold at some cost to precision.
-- **Reduced training budget.** The final model trained at ≤50 epochs / imgsz 640 rather than the
-  `colab_gpu` default of 100 epochs / imgsz 960, after the GPU-budget exhaustion described above —
-  a modest expected trade against peak localisation sharpness for small marks, in exchange for a
-  run that reliably completes.
+| Run | Config | Stamp IoU | Sig IoU |
+|---|---|---|---|
+| Baseline | 640 / 50, default aug | 0.82 | 0.81 |
+| Attempt 2 | 768 / 75, + rotation & shear | 0.803 | 0.804 |
+| **Final** | **768 / 75, default aug, no rotation/shear** | **0.815** | **0.819** |
 
-## 7. Handoff notes (for downstream members / integration)
-- `outputs/predictions/stamp_signature_predictions.csv` carries per-invoice detections; label
-  strings are exactly `"stamp"` and `"signature"` (never merged/renamed), matching
-  `visual_elements.stamp_detected` / `signature_detected` in the final JSON contract.
-- Model weights: `models/models/stamp_detector/best.pt` and
-  `models/models/signature_detector/best.pt` (both point at the same 2-class model).
-- Because the invoice corpus yields 0/750 detections, any verdict-policy rule that requires a
-  visual mark (Strict preset) will fail-closed for the entire batch — this is expected and
-  documented, not an integration bug (see `outputs/reports/final_pipeline_report.md`).
+- Adding geometric distortion (rotation/shear) **lowered** IoU on this small, clean dataset.
+- Removing it while keeping the higher resolution gave the best result and the best
+  precision/recall for stamp (0.91 / 0.91).
+- IoU is at the **data ceiling (~0.82)** — added resolution and epochs did not move it.
 
-## 8. Figures / artifacts to consider for the slide deck
-- `presentation/images/stamp_signature_detection_examples.png` — detector applied to sample
-  invoices.
-- `presentation/images/diana_BoxPR_curve.png` — box precision-recall curve.
-- `presentation/images/diana_confusion_matrix.png` — held-out split confusion matrix.
-- `presentation/images/diana_results.png` — full training/validation curves across all epochs.
-- `presentation/images/diana_val_batch0_pred.jpg` — predictions on a validation batch.
-- `presentation/images/metrics_per_class.png` — grouped precision/recall/mean-IoU bars alongside
-  Jordan's per-class chart.
+## Honest limitations
+Stamp detection is strong (P/R ≈ 0.91, mAP₅₀ 0.92, IoU 0.82). Signature localization is
+comparable (IoU 0.82) but **recall plateaus at ~0.64** — the confidence sweep (0.15–0.40)
+showed recall is threshold-insensitive, so these are genuine missed detections, not filtering.
+The remaining bottlenecks are SignverOD's small/faint signatures, StaVer's derived-from-mask
+boxes (only 88.5% match the expected stamp count), and the document→invoice **domain gap** —
+not the training recipe.
+
+## Handoff
+`stamp_signature_predictions.csv` + `stamp_signature_metrics.json` + weights published to
+`outputs/diana/` and `inputs/upstream/diana/`. Feeds `visual_elements.stamp_detected /
+signature_detected` and `model_metrics.stamp_iou / signature_iou` in the final JSON (Hessam).
+
+## Q&A rehearsal
+- **What is IoU / mean-IoU?** Overlap of predicted vs true box (0–1); we average it over
+  correctly matched boxes (match = IoU ≥ 0.5).
+- **Why per-class metrics?** Stamp and signature behave very differently (stamp strong,
+  signature recall-limited); an overall number would hide that.
+- **Why derive stamp boxes from masks?** StaVer ships no boxes — only binary masks — so boxes
+  come from connected-components, cross-checked against the `numStamps` count (88.5% match).
+- **Precision vs recall trade-off for a "must be signed" check?** We tested it directly — a
+  confidence sweep didn't recover signature recall, so the misses are real, not a threshold choice.
