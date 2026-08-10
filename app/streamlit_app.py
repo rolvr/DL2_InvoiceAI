@@ -63,7 +63,7 @@ SAMPLE_DIR = REPO_ROOT / "app" / "sample_invoices"
 # ===========================================================================
 def sidebar_policy() -> Policy:
     st.sidebar.title("🧾 Obligation-Readiness")
-    view = st.sidebar.radio("View", ["Live Demo", "Batch Gallery", "Completeness", "Model Report"])
+    view = st.sidebar.radio("View", ["Showcase", "Live Demo", "Batch Gallery", "Completeness", "Model Report"])
     st.session_state["view"] = view
 
     st.sidebar.divider()
@@ -410,6 +410,18 @@ def _batch_signal_table() -> pd.DataFrame:
             "payment_context": {},
         } for doc, rows in by_doc.items()]
 
+    if not records:
+        # Last-resort: build the invoice list from Damir's OCR outputs (or the manifest) so the
+        # batch views work with just ocr_outputs.csv — no final_json or Diana preds required.
+        # Visual marks are unknown here → the verdict engine fails-closed on visual rules.
+        ocr_docs = [str(r.get("document_id", "")).strip() for r in RS.load_ocr_outputs()
+                    if str(r.get("source", "")).startswith("invoice") and r.get("document_id")]
+        docs = list(dict.fromkeys(ocr_docs)) or \
+            [str(r.get("document_id")) for r in RS.load_manifest() if r.get("document_id")]
+        records = [{"document_id": d,
+                    "visual_elements": {"stamp_detected": None, "signature_detected": None},
+                    "payment_context": {}} for d in docs]
+
     ocr_text = RS.invoice_ocr_text()
     rows = []
     for rec in records:
@@ -442,10 +454,10 @@ def _apply_policy(table: pd.DataFrame, policy: Policy) -> pd.DataFrame:
 def view_batch(policy: Policy):
     st.title("Batch Gallery — the policy across every invoice")
 
-    if not RS.availability()["final_json"] and not RS.load_stamp_signature():
+    if not (RS.availability()["final_json"] or RS.load_stamp_signature() or RS.load_ocr_outputs()):
         st.warning("⏳ Waiting for member outputs. The batch view needs Hessam's per-invoice JSON "
-                   "(`outputs/final_json/…`) or at least Diana's `stamp_signature_predictions.csv`. "
-                   "It will populate automatically once you copy the Colab outputs into `outputs/`.")
+                   "(`outputs/final_json/…`), Diana's `stamp_signature_predictions.csv`, or at least "
+                   "Damir's `ocr_outputs.csv` in `outputs/predictions/`.")
         _availability_panel()
         return
 
@@ -628,25 +640,51 @@ def _invoice_image_path(document_id: str):
 # ===========================================================================
 @st.cache_data(show_spinner="Scoring completeness across the batch (first time only — cached)…")
 def _completeness_table() -> pd.DataFrame:
-    """document_id -> completeness score/tier/breakdown. Joins the cached signal table with
-    Jordan's region labels + Damir's OCR text/confidence. Policy-independent, so cached."""
-    sig = _batch_signal_table()
-    reg_by_doc: dict[str, set] = {}
+    """Graded completeness per invoice. Self-sufficient: builds the invoice list + OCR text from
+    Damir's ocr_outputs.csv (invoice rows), regions from Jordan's region_predictions.csv, and
+    derives reference/date/terms with the shared helpers. Does NOT require Hessam's final_json."""
+    from src.streamlit_helpers import derive_reference_signals, derive_terms_signals
+
+    ocr_by_doc, conf_by_doc = {}, {}
+    for r in RS.load_ocr_outputs():
+        if not str(r.get("source", "")).startswith("invoice"):
+            continue
+        d = str(r.get("document_id", "")).strip()
+        if not d:
+            continue
+        t = r.get("ocr_text")
+        ocr_by_doc.setdefault(d, t if isinstance(t, str) else "")
+        conf_by_doc.setdefault(d, r.get("mean_confidence"))
+
+    docs = list(ocr_by_doc) or [str(r.get("document_id")) for r in RS.load_manifest() if r.get("document_id")]
+    if not docs:
+        return pd.DataFrame()
+
+    reg_by_doc = {}
     for r in RS.load_regions():
         if "source" in r and str(r.get("source", "")) not in ("", "invoice"):
             continue
         d, lbl = r.get("document_id"), r.get("region_label")
         if d and lbl:
             reg_by_doc.setdefault(d, set()).add(lbl)
-    ocr = RS.invoice_ocr_text()
-    conf: dict[str, Any] = {}
-    for r in RS.load_ocr_outputs():
-        if str(r.get("source", "")).startswith("invoice"):
-            conf[r.get("document_id")] = r.get("mean_confidence")
+
+    ss_by_doc = {}
+    for r in RS.load_stamp_signature():
+        ss_by_doc.setdefault(r.get("document_id"), set()).add(r.get("label"))
+
     rows = []
-    for row in sig.itertuples(index=False):
-        d = row.document_id
-        res = CP.score(row.signals, reg_by_doc.get(d, set()), ocr.get(d, ""), conf.get(d))
+    for d in docs:
+        txt = ocr_by_doc.get(d, "")
+        terms = derive_terms_signals(txt)
+        sig = {
+            "stamp_detected": "stamp" in ss_by_doc.get(d, set()),
+            "signature_detected": "signature" in ss_by_doc.get(d, set()),
+            "references": derive_reference_signals(txt),
+            "invoice_date": terms.get("invoice_date"),
+            "billing_due_days": terms.get("billing_due_days"),
+            "payment_terms": terms.get("payment_terms"),
+        }
+        res = CP.score(sig, reg_by_doc.get(d, set()), txt, conf_by_doc.get(d))
         rows.append({"document_id": d, **res})
     return pd.DataFrame(rows)
 
@@ -661,9 +699,9 @@ def view_completeness():
         "· Not ready < 60.** Fail-closed; the reference slot requires a real digit-bearing invoice "
         "number and is capped at 20/100 so it can't dominate.")
 
-    if not (RS.load_stamp_signature() or RS.load_regions() or RS.availability()["final_json"]):
-        st.warning("⏳ Waiting for member outputs (regions / OCR). Copy the Colab outputs into "
-                   "`outputs/` (see the handoff guide), then reload.")
+    if not (RS.load_ocr_outputs() or RS.load_regions()):
+        st.warning("⏳ Needs Damir's `ocr_outputs.csv` and/or Jordan's `region_predictions.csv` in "
+                   "`outputs/predictions/`. Add those two files and reload.")
         _availability_panel()
         return
 
@@ -699,10 +737,99 @@ def view_completeness():
 
 
 # ===========================================================================
+# View: Showcase — one invoice, both readiness views. Self-contained (weights only).
+# ===========================================================================
+def view_showcase():
+    st.title("🧾 Invoice Obligation-Readiness — Showcase")
+    st.caption(
+        "Pick a sample invoice (or upload one). The app detects regions + stamp/signature, reads "
+        "the text, and shows **both** readiness views — the strict rule-based policies **and** the "
+        "graded completeness score. Self-contained: needs only the model weights in `models/` "
+        "(no batch data) — this is the view to deploy.")
+
+    conf = st.slider("Detection confidence threshold", 0.0, 1.0, 0.25, 0.05)
+    samples = sorted(
+        p.name for p in SAMPLE_DIR.glob("*")
+        if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".tif", ".tiff"}
+    ) if SAMPLE_DIR.exists() else []
+
+    c1, c2 = st.columns(2)
+    picked = c1.selectbox("Sample invoice", ["— none —"] + samples)
+    up = c2.file_uploader("…or upload your own", type=["png", "jpg", "jpeg", "tif", "tiff"])
+
+    if up is not None:
+        pil, name = Image.open(up).convert("RGB"), up.name
+    elif picked != "— none —":
+        pil, name = Image.open(SAMPLE_DIR / picked).convert("RGB"), picked
+    else:
+        st.info("Pick a sample above or upload an invoice to run the full pipeline.")
+        return
+
+    image_bgr = np.array(pil)[:, :, ::-1]
+    with st.spinner("Detecting regions + stamp/signature and reading text (CPU)…"):
+        live = run_live(image_bgr, conf)
+        ocr_text = run_live_ocr(image_bgr)
+
+    annotated = draw_overlays(pil, live["stamp_sig_rows"], live["region_rows"], True, True)
+    record = {
+        "visual_elements": {
+            "stamp_detected": (any(r["label"] == "stamp" for r in live["stamp_sig_rows"])
+                               if live["vision_available"] else None),
+            "signature_detected": (any(r["label"] == "signature" for r in live["stamp_sig_rows"])
+                                   if live["vision_available"] else None),
+        },
+        "payment_context": {},
+    }
+    signals = signals_from_record(record, ocr_text=ocr_text)
+    region_labels = {r.get("region_label") for r in live["region_rows"]}
+    comp = CP.score(signals, region_labels, ocr_text or "", None)
+
+    left, right = st.columns([1.15, 1])
+    with left:
+        st.subheader("Detected")
+        st.image(annotated, width="stretch")
+        n_stamp = sum(1 for r in live["stamp_sig_rows"] if r["label"] == "stamp")
+        n_sig = sum(1 for r in live["stamp_sig_rows"] if r["label"] == "signature")
+        st.caption(f"{len(live['region_rows'])} region box(es) · {n_stamp} stamp · {n_sig} signature"
+                   + ("" if live["region_available"] else "  ⚠️ region weights missing from models/")
+                   + ("" if live["vision_available"] else "  ⚠️ stamp/signature weights missing from models/"))
+        with st.expander("Extracted OCR text"):
+            st.text(ocr_text or "(no text)")
+
+    with right:
+        st.subheader("① Graded completeness")
+        st.progress(comp["score"] / 100.0)
+        st.metric("Score", f"{comp['score']} / 100", comp["tier"])
+        for k, lbl in [("total", "Total / amount"), ("date", "Date"), ("reference", "Reference no."),
+                       ("counterparty", "Counterparty"), ("readable", "Readable OCR")]:
+            st.markdown(f"&nbsp;&nbsp;{'✅' if comp['has_' + k] else '❌'} {lbl}", unsafe_allow_html=True)
+        if comp["reference_match"]:
+            st.caption(f"reference matched: `{comp['reference_match']}`")
+
+        st.divider()
+        st.subheader("② Strict policies (fail-closed)")
+        for pname, pol in preset_policies().items():
+            v = evaluate(signals, pol)
+            st.markdown(f"{'✅' if v.ready else '⛔'} **{pname}** — "
+                        f"{'Ready' if v.ready else 'Not ready'} ({v.n_pass}/{v.n_enabled} rules)")
+        with st.expander("Signals used"):
+            st.json(signals)
+
+    st.divider()
+    dl1, dl2 = st.columns(2)
+    payload = {"document_id": name, "completeness": comp, "signals": signals,
+               "strict_policies": {n: evaluate(signals, p).as_dict() for n, p in preset_policies().items()}}
+    dl1.download_button("⬇︎ Download result JSON", data=to_downloadable_json(payload),
+                        file_name=f"{Path(name).stem}_showcase.json", mime="application/json")
+
+
+# ===========================================================================
 def main():
     policy = sidebar_policy()
-    view = st.session_state.get("view", "Live Demo")
-    if view == "Live Demo":
+    view = st.session_state.get("view", "Showcase")
+    if view == "Showcase":
+        view_showcase()
+    elif view == "Live Demo":
         view_live_demo(policy)
     elif view == "Batch Gallery":
         view_batch(policy)
