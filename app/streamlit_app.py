@@ -46,6 +46,7 @@ from src.streamlit_helpers import (  # noqa: E402
 from src.verdict_engine import (  # noqa: E402
     DateRangeRule, PaymentTermsRule, Policy, ReferenceRule, VisualRule, evaluate, preset_policies,
 )
+from src import completeness as CP  # noqa: E402
 
 st.set_page_config(page_title="Invoice Obligation-Readiness", layout="wide", page_icon="🧾")
 
@@ -62,7 +63,7 @@ SAMPLE_DIR = REPO_ROOT / "app" / "sample_invoices"
 # ===========================================================================
 def sidebar_policy() -> Policy:
     st.sidebar.title("🧾 Obligation-Readiness")
-    view = st.sidebar.radio("View", ["Live Demo", "Batch Gallery", "Model Report"])
+    view = st.sidebar.radio("View", ["Live Demo", "Batch Gallery", "Completeness", "Model Report"])
     st.session_state["view"] = view
 
     st.sidebar.divider()
@@ -623,6 +624,81 @@ def _invoice_image_path(document_id: str):
 
 
 # ===========================================================================
+# View: Completeness (graded readiness — notebook 06 rubric, via src/completeness.py)
+# ===========================================================================
+@st.cache_data(show_spinner="Scoring completeness across the batch (first time only — cached)…")
+def _completeness_table() -> pd.DataFrame:
+    """document_id -> completeness score/tier/breakdown. Joins the cached signal table with
+    Jordan's region labels + Damir's OCR text/confidence. Policy-independent, so cached."""
+    sig = _batch_signal_table()
+    reg_by_doc: dict[str, set] = {}
+    for r in RS.load_regions():
+        if "source" in r and str(r.get("source", "")) not in ("", "invoice"):
+            continue
+        d, lbl = r.get("document_id"), r.get("region_label")
+        if d and lbl:
+            reg_by_doc.setdefault(d, set()).add(lbl)
+    ocr = RS.invoice_ocr_text()
+    conf: dict[str, Any] = {}
+    for r in RS.load_ocr_outputs():
+        if str(r.get("source", "")).startswith("invoice"):
+            conf[r.get("document_id")] = r.get("mean_confidence")
+    rows = []
+    for row in sig.itertuples(index=False):
+        d = row.document_id
+        res = CP.score(row.signals, reg_by_doc.get(d, set()), ocr.get(d, ""), conf.get(d))
+        rows.append({"document_id": d, **res})
+    return pd.DataFrame(rows)
+
+
+def view_completeness():
+    st.title("Completeness Score — graded obligation-readiness")
+    st.caption(
+        "A complement to the strict pass/fail verdict. Instead of one hard gate (which is ~0% on "
+        "this corpus with no PO/contract references), each invoice is scored on how many core "
+        "obligation fields it actually has — **total 25 · date 20 · reference 20 · counterparty 20 "
+        "· readable 15** (+bonus payment-terms/visual 10 each). **Ready ≥ 80 · Needs review 60–79 "
+        "· Not ready < 60.** Fail-closed; the reference slot requires a real digit-bearing invoice "
+        "number and is capped at 20/100 so it can't dominate.")
+
+    if not (RS.load_stamp_signature() or RS.load_regions() or RS.availability()["final_json"]):
+        st.warning("⏳ Waiting for member outputs (regions / OCR). Copy the Colab outputs into "
+                   "`outputs/` (see the handoff guide), then reload.")
+        _availability_panel()
+        return
+
+    df = _completeness_table()
+    if df.empty:
+        st.warning("No invoices to score yet.")
+        return
+
+    order = ["Ready", "Needs review", "Not ready"]
+    counts = df.tier.value_counts().reindex(order).fillna(0).astype(int)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Invoices scored", len(df))
+    c2.metric("Ready (≥80)", f"{int(counts['Ready'])} ({100*counts['Ready']/len(df):.0f}%)")
+    c3.metric("Needs review", f"{int(counts['Needs review'])} ({100*counts['Needs review']/len(df):.0f}%)")
+    c4.metric("Mean score", f"{df.score.mean():.1f}/100")
+
+    st.bar_chart(counts)
+    st.caption("Honest note: on this corpus date/reference/readable are near-universal, so the tier "
+               "is effectively driven by whether the region detector found a **total** and a "
+               "**counterparty** — the per-field breakdown below shows exactly why each invoice scored.")
+
+    filt = st.radio("Show", ["All"] + order, horizontal=True)
+    view_df = df if filt == "All" else df[df.tier == filt]
+    st.dataframe(view_df, width="stretch", height=340)
+    st.download_button("⬇︎ Export completeness scores (CSV)",
+                       data=df.to_csv(index=False).encode(),
+                       file_name="readiness_completeness_scores.csv", mime="text/csv")
+
+    st.divider()
+    st.subheader("Inspect one invoice")
+    pick = st.selectbox("document_id", df.document_id.tolist())
+    st.json(df[df.document_id == pick].iloc[0].to_dict())
+
+
+# ===========================================================================
 def main():
     policy = sidebar_policy()
     view = st.session_state.get("view", "Live Demo")
@@ -630,6 +706,8 @@ def main():
         view_live_demo(policy)
     elif view == "Batch Gallery":
         view_batch(policy)
+    elif view == "Completeness":
+        view_completeness()
     else:
         view_report()
 
