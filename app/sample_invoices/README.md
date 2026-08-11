@@ -13,6 +13,8 @@ full progression, so the demo runs end-to-end with no dataset download.
 | `signature_only_1_real.png` | Signature only | **Real SignverOD** letter with a handwritten signature — authentic detection example |
 | `signature_only_2_invoice.jpg` | Signature only | Composite: clean invoice + PO No + **signature** |
 | `both_stamp_and_signature.jpg` | Both | Composite: clean invoice + PO No + **stamp + signature** → passes **Default AND Strict**, completeness 100 |
+| `receipt_1_soonhuat.jpg` | Receipt | Real SROIE receipt (Soon Huat Machinery) — different doc type; company + date + total + doc no |
+| `receipt_2_abcho.jpg` | Receipt | Real SROIE receipt (ABC Ho Trading) — simple cash bill; company + date + total |
 
 ## Notes for the deploy team
 - **Two are real dataset images** (`*_real.*`, from StaVer / SignverOD) — genuine stamp/signature
