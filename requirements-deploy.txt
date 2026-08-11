@@ -1,0 +1,9 @@
+# Slim dependency set for the DEPLOYED Showcase app (app/streamlit_app.py with DL2_SHOWCASE_ONLY=1).
+# Excludes tensorflow/keras (unused by the app). ultralytics + easyocr pull in torch automatically.
+streamlit
+ultralytics
+easyocr
+opencv-python-headless
+pillow
+pandas
+numpy

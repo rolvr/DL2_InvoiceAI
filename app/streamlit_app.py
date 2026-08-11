@@ -825,6 +825,13 @@ def view_showcase():
 
 # ===========================================================================
 def main():
+    import os
+    # Deployed demo: set DL2_SHOWCASE_ONLY=1 to show ONLY the Showcase tab (no batch data needed).
+    if os.environ.get("DL2_SHOWCASE_ONLY", "").strip().lower() in ("1", "true", "yes"):
+        st.sidebar.title("🧾 Obligation-Readiness")
+        st.sidebar.caption("Deployed demo — upload or pick an invoice.")
+        view_showcase()
+        return
     policy = sidebar_policy()
     view = st.session_state.get("view", "Showcase")
     if view == "Showcase":
