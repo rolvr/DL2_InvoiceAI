@@ -1,0 +1,120 @@
+{
+  "info": {
+    "name": "Invoice Obligation-Readiness API",
+    "description": "Postman collection for the FastAPI service that wraps the DL2_InvoiceAI pipeline. Set the `base_url` collection variable (default http://localhost:8000). For the /predict requests, open the Body tab and (re)select an invoice image file for the `file` form field before sending.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Root (metadata)",
+      "request": {
+        "method": "GET",
+        "header": [ { "key": "accept", "value": "application/json" } ],
+        "url": { "raw": "{{base_url}}/", "host": [ "{{base_url}}" ], "path": [ "" ] }
+      }
+    },
+    {
+      "name": "Health",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', () => pm.response.to.have.status(200));",
+              "const j = pm.response.json();",
+              "pm.test('reports service status', () => pm.expect(j.status).to.eql('ok'));",
+              "pm.test('lists model availability', () => pm.expect(j).to.have.property('models'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [ { "key": "accept", "value": "application/json" } ],
+        "url": { "raw": "{{base_url}}/health", "host": [ "{{base_url}}" ], "path": [ "health" ] }
+      }
+    },
+    {
+      "name": "Policies",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', () => pm.response.to.have.status(200));",
+              "const j = pm.response.json();",
+              "pm.test('has presets', () => pm.expect(j.presets.length).to.be.above(0));",
+              "pm.test('has required_fields', () => pm.expect(j).to.have.property('required_fields'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [ { "key": "accept", "value": "application/json" } ],
+        "url": { "raw": "{{base_url}}/policies", "host": [ "{{base_url}}" ], "path": [ "policies" ] }
+      }
+    },
+    {
+      "name": "Predict (OCR on)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', () => pm.response.to.have.status(200));",
+              "const j = pm.response.json();",
+              "pm.test('returns verdicts', () => pm.expect(j).to.have.property('verdicts'));",
+              "pm.test('returns completeness', () => pm.expect(j.completeness).to.have.property('score'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "accept", "value": "application/json" } ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": "",
+              "description": "Select an invoice image (png/jpg/jpeg/tif/tiff) before sending."
+            }
+          ]
+        },
+        "url": { "raw": "{{base_url}}/predict", "host": [ "{{base_url}}" ], "path": [ "predict" ] }
+      }
+    },
+    {
+      "name": "Predict (params: confidence, OCR off, id)",
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "accept", "value": "application/json" } ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "file", "type": "file", "src": "", "description": "Select an invoice image before sending." }
+          ]
+        },
+        "url": {
+          "raw": "{{base_url}}/predict?confidence=0.4&run_ocr=false&document_id=ACME-001",
+          "host": [ "{{base_url}}" ],
+          "path": [ "predict" ],
+          "query": [
+            { "key": "confidence", "value": "0.4" },
+            { "key": "run_ocr", "value": "false" },
+            { "key": "document_id", "value": "ACME-001" }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+# FastAPI service dependencies (in addition to the project's root requirements.txt,
+# which already pins numpy/opencv/pillow/ultralytics/easyocr for the actual pipeline).
+#
+#   pip install -r requirements.txt          # the pipeline (models, OCR, etc.)
+#   pip install -r requirements-api.txt      # the API + test clients
+
+fastapi
+uvicorn[standard]
+python-multipart          # required by FastAPI for multipart/form-data file uploads
+pydantic>=2
+
+# Test clients + test suite
+requests                  # the Python web client (clients/python_client.py)
+pytest
+httpx                     # used by fastapi.testclient.TestClient
