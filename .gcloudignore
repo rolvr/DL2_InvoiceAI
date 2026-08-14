@@ -20,7 +20,11 @@ Full Stack/
 *.ipynb
 *.docx
 *.pptx
-Dockerfile
-requirements.txt
+
+# Root-only excludes (leading slash = anchored to repo root, so they do NOT match deploy/Dockerfile).
+# A bare "Dockerfile"/"requirements.txt" would match at ANY depth and wrongly drop deploy/Dockerfile.
+/Dockerfile
+/requirements.txt
 
 # NOTE: models/ is intentionally NOT ignored — the trained best.pt weights must be in the context.
+# NOTE: deploy/Dockerfile MUST reach Cloud Build (referenced by deploy/cloudbuild.yaml) — never ignore it.
