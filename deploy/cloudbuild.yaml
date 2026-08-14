@@ -1,0 +1,8 @@
+# Cloud Build config that builds the isolated deploy/Dockerfile from the repo-root context,
+# so nothing at the repo root needs to change. Run from the repo root:
+#   gcloud builds submit --config deploy/cloudbuild.yaml .
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-f", "deploy/Dockerfile", "-t", "gcr.io/$PROJECT_ID/invoice-streamlit", "."]
+images:
+  - "gcr.io/$PROJECT_ID/invoice-streamlit"

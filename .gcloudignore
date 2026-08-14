@@ -1,0 +1,26 @@
+# Controls what `gcloud builds submit` uploads as the build context.
+# Without this file, gcloud falls back to .gitignore — which excludes models/*.pt, and the image
+# would ship with NO weights. This file keeps models/ (and app/src/config) and drops the rest.
+.git/
+.venv/
+__pycache__/
+*.pyc
+
+# Not needed for the Streamlit image:
+colab/
+members/
+notebooks/
+tests/
+clients/
+ai_cowork/
+presentation/
+data/
+outputs/
+Full Stack/
+*.ipynb
+*.docx
+*.pptx
+Dockerfile
+requirements.txt
+
+# NOTE: models/ is intentionally NOT ignored — the trained best.pt weights must be in the context.
