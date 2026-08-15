@@ -6,3 +6,4 @@ steps:
     args: ["build", "-f", "deploy/Dockerfile", "-t", "gcr.io/$PROJECT_ID/invoice-streamlit", "."]
 images:
   - "gcr.io/$PROJECT_ID/invoice-streamlit"
+logging: CLOUD_LOGGING_ONLY
