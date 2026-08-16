@@ -1,5 +1,10 @@
 # Colleague Handoff — deploy the Streamlit as a SECOND service (API stays live)
 
+**Status:** ✅ Deployed and verified live (Aug 15, 2026). Streamlit at
+`http://34.130.49.237:8501`, FastAPI still healthy at `http://34.130.49.237:8000/docs`.
+This doc now includes every fix hit during the first deploy — the IAM/repo steps below are
+one-time and already applied to the project, so a re-deploy or update won't hit them again.
+
 **Goal:** run the Streamlit Showcase as a new container on the existing VM, on a new port,
 **without touching** the FastAPI already live at `http://34.130.49.237:8000/docs`.
 
@@ -12,7 +17,8 @@ container is never stopped or modified.
 - You own the VM and the GCP project, so you run all the `gcloud` steps below.
 - Values used here:
   - **Project:** `feisty-tempo-505518-b1`
-  - **VM:** `nvoiceai-vm`  (confirm with `gcloud compute instances list` if unsure)
+  - **VM:** `invoiceai-vm`  (confirm with `gcloud compute instances list` if unsure)
+  - **Compute/Cloud Build service account:** `756229649206-compute@developer.gserviceaccount.com`
   - **Zone:** `northamerica-northeast2-c`
   - **VM external IP:** `34.130.49.237`
   - **New Streamlit port:** `8501`  (API keeps `8000`)
@@ -31,6 +37,27 @@ container is never stopped or modified.
 
 ---
 
+## Step 0 — One-time project setup (already applied to this project)
+These were needed the first time on this newer project. **Already done on `feisty-tempo-505518-b1`**
+— listed so a fresh project or a future agent can reproduce them. Skip if re-deploying here.
+
+```bash
+# a) Grant the Compute/Cloud Build service account the roles the build needs
+gcloud projects add-iam-policy-binding feisty-tempo-505518-b1 \
+  --member="serviceAccount:756229649206-compute@developer.gserviceaccount.com" \
+  --role="roles/artifactregistry.writer"
+gcloud projects add-iam-policy-binding feisty-tempo-505518-b1 \
+  --member="serviceAccount:756229649206-compute@developer.gserviceaccount.com" \
+  --role="roles/logging.logWriter"
+
+# b) Create the gcr.io Artifact Registry repo (new projects don't auto-create it on first push)
+gcloud artifacts repositories create gcr.io \
+  --project=feisty-tempo-505518-b1 --repository-format=docker --location=us
+```
+> **Do NOT use a Cloud Build Console trigger.** On this project the Console forces a service-account
+> pick and then errors on logging config (`build must specify logs_bucket / CLOUD_LOGGING_ONLY`).
+> The CLI path below (`gcloud builds submit`) avoids all of that — use it.
+
 ## Step 1 — Build the image in the cloud (from a clone of the repo)
 ```bash
 git clone https://github.com/rolvr/DL2_InvoiceAI.git
@@ -42,7 +69,8 @@ gcloud services enable cloudbuild.googleapis.com containerregistry.googleapis.co
 gcloud builds submit --config deploy/cloudbuild.yaml .
 ```
 Wait for `SUCCESS`. This pushes `gcr.io/feisty-tempo-505518-b1/invoice-streamlit`.
-(A `.gcloudignore` in the repo makes sure the model weights `models/*.pt` are included in the build.)
+(A `.gcloudignore` in the repo makes sure the model weights `models/*.pt` are included in the build,
+and its `/Dockerfile` pattern is root-anchored so `deploy/Dockerfile` still reaches the build.)
 
 Takes ~5–10 min the first time (PyTorch base image).
 
@@ -50,7 +78,7 @@ Takes ~5–10 min the first time (PyTorch base image).
 
 ## Step 2 — On the VM: add swap, then run the container next to the API
 ```bash
-gcloud compute ssh nvoiceai-vm --zone northamerica-northeast2-c
+gcloud compute ssh invoiceai-vm --zone northamerica-northeast2-c
 ```
 Then **inside the VM**:
 ```bash
@@ -59,7 +87,9 @@ sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapf
 free -h        # should now show ~4.0Gi swap
 
 # b) pull + run the Streamlit image (NEW name, NEW port — API container untouched)
-gcloud auth configure-docker --quiet
+# NOTE: use `sudo gcloud ...` — `sudo docker` runs as root, which has its OWN docker config.
+# Without sudo here, the credential helper lands in your user config and the root pull is unauthenticated.
+sudo gcloud auth configure-docker --quiet
 sudo docker pull gcr.io/feisty-tempo-505518-b1/invoice-streamlit
 sudo docker run -d --name invoice-streamlit --restart unless-stopped \
   -p 8501:8080 gcr.io/feisty-tempo-505518-b1/invoice-streamlit
@@ -86,14 +116,15 @@ gcloud compute firewall-rules create allow-streamlit-8501 \
 ---
 
 ## If `docker pull` returns 403 (permission denied)
-The VM's service account can't read the registry. Grant it read access (run from your machine,
-replace `SA_EMAIL` with the VM's service account — find it with
-`gcloud compute instances describe nvoiceai-vm --zone northamerica-northeast2-c --format='value(serviceAccounts.email)'`):
+First check it's not the `sudo` config issue above (run `sudo gcloud auth configure-docker --quiet`
+then retry). If it still fails, the VM's service account lacks registry read. Grant it:
 ```bash
 gcloud projects add-iam-policy-binding feisty-tempo-505518-b1 \
-  --member="serviceAccount:SA_EMAIL" --role="roles/artifactregistry.reader"
+  --member="serviceAccount:756229649206-compute@developer.gserviceaccount.com" \
+  --role="roles/artifactregistry.reader"
 ```
-Then re-run the `docker pull`.
+Then re-run the `docker pull`. (On this project the SA already has `artifactregistry.writer`,
+which includes read — so this shouldn't recur here.)
 
 ---
 
